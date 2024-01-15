@@ -3,7 +3,18 @@ from common.misc_util import adjust_lr, get_n_params
 import torch
 import torch.optim as optim
 import numpy as np
+import imageio
+from tqdm import tqdm
+import wandb
 
+def create_gif(observations, filename):
+    with imageio.get_writer(filename, mode='I') as writer:
+        for batch in observations:  # Iterate over each batch in observations
+            first_obs = batch[0]  # Select the first observation from the batch
+            # Convert to 8-bit RGB format
+            first_obs = np.transpose(first_obs, (1, 2, 0))  # Rearrange to (64, 64, 3)
+            first_obs = (first_obs * 255).astype(np.uint8)  # Convert to uint8
+            writer.append_data(first_obs)
 
 class PPO(BaseAgent):
     def __init__(self,
@@ -112,39 +123,95 @@ class PPO(BaseAgent):
                    'Loss/entropy': np.mean(entropy_loss_list)}
         return summary
 
-    def train(self, num_timesteps):
-        save_every = num_timesteps // self.num_checkpoints
+    def train(self, num_timesteps, num_checkpoints):
+        wandb.init(project="procgen")
+        save_every = num_timesteps // num_checkpoints
         checkpoint_cnt = 0
         obs = self.env.reset()
         hidden_state = np.zeros((self.n_envs, self.storage.hidden_state_size))
         done = np.zeros(self.n_envs)
+        observations_for_gif = []  # List to store observations for GIF
+        video_frames = []
 
-        while self.t < num_timesteps:
-            # Run Policy
-            self.policy.eval()
-            for _ in range(self.n_steps):
-                act, log_prob_act, value, next_hidden_state = self.predict(obs, hidden_state, done)
-                next_obs, rew, done, info = self.env.step(act)
-                self.storage.store(obs, hidden_state, act, rew, done, info, log_prob_act, value)
-                obs = next_obs
-                hidden_state = next_hidden_state
-            _, _, last_val, hidden_state = self.predict(obs, hidden_state, done)
-            self.storage.store_last(obs, hidden_state, last_val)
-            # Compute advantage estimates
-            self.storage.compute_estimates(self.gamma, self.lmbda, self.use_gae, self.normalize_adv)
+        with tqdm(total=num_timesteps, desc="Training Progress") as pbar:  # Initialize tqdm progress bar
+            while self.t < num_timesteps:
+                self.policy.eval()
+                for _ in range(self.n_steps):
+                    act, log_prob_act, value, next_hidden_state = self.predict(obs, hidden_state, done)
+                    next_obs, rew, done, info = self.env.step(act)
+                    self.storage.store(obs, hidden_state, act, rew, done, info, log_prob_act, value)
 
-            # Optimize policy & valueq
-            summary = self.optimize()
-            # Log the training-procedure
-            self.t += self.n_steps * self.n_envs
-            rew_batch, done_batch = self.storage.fetch_log_data()
-            self.logger.feed(rew_batch, done_batch)
-            self.logger.write_summary(summary)
-            self.logger.dump()
-            self.optimizer = adjust_lr(self.optimizer, self.learning_rate, self.t, num_timesteps)
-            # Save the model
-            if self.t > ((checkpoint_cnt+1) * save_every):
-                torch.save({'state_dict': self.policy.state_dict()}, self.logger.logdir +
-                           '/model_' + str(self.t) + '.pth')
-                checkpoint_cnt += 1
+                    if self.t >= num_timesteps - self.n_steps * self.n_envs:
+                        observations_for_gif.append(next_obs)  # Save observation for the final episode
+                    video_frames.append(next_obs)
+                    obs = next_obs
+                    hidden_state = next_hidden_state
+
+                _, _, last_val, hidden_state = self.predict(obs, hidden_state, done)
+                self.storage.store_last(obs, hidden_state, last_val)
+                self.storage.compute_estimates(self.gamma, self.lmbda, self.use_gae, self.normalize_adv)
+                summary = self.optimize()
+                self.t += self.n_steps * self.n_envs
+                pbar.update(self.n_steps * self.n_envs)  # Update the progress bar
+                rew_batch, done_batch = self.storage.fetch_log_data()
+                self.logger.feed(rew_batch, done_batch)
+                self.logger.write_summary(summary)
+                wandb.log({"Reward": rew_batch.mean(), "Episode": self.t})
+                # self.logger.dump()
+                self.optimizer = adjust_lr(self.optimizer, self.learning_rate, self.t, num_timesteps)
+
+                if len(video_frames) > 1000:
+                    video_frames = video_frames[-1000:]
+
+                # Save checkpoints at regular intervals
+                if self.t >= ((checkpoint_cnt + 1) * save_every) and checkpoint_cnt < num_checkpoints:
+                    # save video as gif
+                    create_gif(video_frames, self.logger.logdir + f'/episode_{self.t}.gif')
+                    # upload gif to wandb
+                    wandb.log({"Video": wandb.Video(self.logger.logdir + f'/episode_{self.t}.gif', fps=4, format="gif")})
+                    checkpoint_path = f"{self.logger.logdir}/model_{self.t}.pth"
+                    torch.save({'state_dict': self.policy.state_dict()}, checkpoint_path)
+                    wandb.save(checkpoint_path)  # Save checkpoint to wandb
+                    checkpoint_cnt += 1
+
+        create_gif(observations_for_gif, self.logger.logdir + '/final_episode.gif')
+        print(f"Saved GIF to {self.logger.logdir + '/final_episode.gif'}")
         self.env.close()
+
+
+    # def train(self, num_timesteps):
+    #     save_every = num_timesteps // self.num_checkpoints
+    #     checkpoint_cnt = 0
+    #     obs = self.env.reset()
+    #     hidden_state = np.zeros((self.n_envs, self.storage.hidden_state_size))
+    #     done = np.zeros(self.n_envs)
+
+    #     while self.t < num_timesteps:
+    #         # Run Policy
+    #         self.policy.eval()
+    #         for _ in range(self.n_steps):
+    #             act, log_prob_act, value, next_hidden_state = self.predict(obs, hidden_state, done)
+    #             next_obs, rew, done, info = self.env.step(act)
+    #             self.storage.store(obs, hidden_state, act, rew, done, info, log_prob_act, value)
+    #             obs = next_obs
+    #             hidden_state = next_hidden_state
+    #         _, _, last_val, hidden_state = self.predict(obs, hidden_state, done)
+    #         self.storage.store_last(obs, hidden_state, last_val)
+    #         # Compute advantage estimates
+    #         self.storage.compute_estimates(self.gamma, self.lmbda, self.use_gae, self.normalize_adv)
+
+    #         # Optimize policy & valueq
+    #         summary = self.optimize()
+    #         # Log the training-procedure
+    #         self.t += self.n_steps * self.n_envs
+    #         rew_batch, done_batch = self.storage.fetch_log_data()
+    #         self.logger.feed(rew_batch, done_batch)
+    #         self.logger.write_summary(summary)
+    #         self.logger.dump()
+    #         self.optimizer = adjust_lr(self.optimizer, self.learning_rate, self.t, num_timesteps)
+    #         # Save the model
+    #         if self.t > ((checkpoint_cnt+1) * save_every):
+    #             torch.save({'state_dict': self.policy.state_dict()}, self.logger.logdir +
+    #                        '/model_' + str(self.t) + '.pth')
+    #             checkpoint_cnt += 1
+    #     self.env.close()

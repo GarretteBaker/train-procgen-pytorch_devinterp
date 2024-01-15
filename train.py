@@ -72,7 +72,8 @@ if __name__=='__main__':
                      env_name=env_name,
                      start_level=start_level,
                      num_levels=num_levels,
-                     distribution_mode=distribution_mode)
+                     distribution_mode=distribution_mode, 
+                     rand_region = 5) 
     normalize_rew = hyperparameters.get('normalize_rew', True)
     env = VecExtractDictObs(env, "rgb")
     if normalize_rew:
@@ -138,4 +139,4 @@ if __name__=='__main__':
     ## TRAINING ##
     ##############
     print('START TRAINING...')
-    agent.train(num_timesteps)
+    agent.train(num_timesteps, num_checkpoints)

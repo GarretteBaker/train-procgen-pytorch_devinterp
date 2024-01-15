@@ -24,8 +24,6 @@ var/
 *.egg
 
 # PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
 
@@ -79,6 +77,11 @@ celerybeat-schedule
 # Rope project settings
 .ropeproject
 
-
-
+# JetBrains IDEs (e.g., PyCharm)
 .idea/
+
+# Weights & Biases
+wandb/
+
+# logs
+logs/

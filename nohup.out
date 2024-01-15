@@ -1,0 +1,142 @@
+[LOADING HYPERPARAMETERS...]
+algo : ppo
+n_envs : 64
+n_steps : 256
+epoch : 3
+mini_batch_per_epoch : 8
+mini_batch_size : 2048
+gamma : 0.999
+lmbda : 0.95
+learning_rate : 0.0005
+grad_clip_norm : 0.5
+eps_clip : 0.2
+value_coef : 0.5
+entropy_coef : 0.01
+normalize_adv : True
+normalize_rew : True
+use_gae : True
+architecture : impala
+recurrent : False
+INITIALIZAING ENVIRONMENTS...
+building procgen...wandb: Currently logged in as: garrettebaker. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.16.2
+wandb: Run data is saved locally in /workspace/train-procgen-pytorch/wandb/run-20240113_015928-4r2yoaae
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run wise-snowball-19
+wandb: ⭐️ View project at https://wandb.ai/garrettebaker/procgen
+wandb: 🚀 View run at https://wandb.ai/garrettebaker/procgen/runs/4r2yoaae
+done
+INITIALIZAING LOGGER...
+INTIALIZING MODEL...
+INITIALIZAING STORAGE...
+INTIALIZING AGENT...
+START TRAINING...
+Training Progress:   0%|          | 0/10000000 [00:00<?, ?it/s]Training Progress:   0%|          | 16384/10000000 [00:08<1:25:44, 1940.68it/s]Training Progress:   0%|          | 32768/10000000 [00:16<1:24:31, 1965.22it/s]Training Progress:   0%|          | 49152/10000000 [00:24<1:23:39, 1982.32it/s]Training Progress:   1%|          | 65536/10000000 [00:33<1:23:15, 1988.49it/s]Training Progress:   1%|          | 81920/10000000 [00:41<1:22:40, 1999.60it/s]Training Progress:   1%|          | 98304/10000000 [00:49<1:22:32, 1999.45it/s]Training Progress:   1%|          | 114688/10000000 [00:57<1:22:15, 2002.78it/s]Training Progress:   1%|          | 114688/10000000 [01:10<1:22:15, 2002.78it/s]Training Progress:   1%|▏         | 131072/10000000 [01:10<1:38:41, 1666.54it/s]Training Progress:   1%|▏         | 147456/10000000 [01:19<1:33:06, 1763.67it/s]Training Progress:   2%|▏         | 163840/10000000 [01:27<1:29:38, 1828.89it/s]Training Progress:   2%|▏         | 180224/10000000 [01:35<1:26:57, 1881.96it/s]Training Progress:   2%|▏         | 196608/10000000 [01:43<1:25:11, 1917.79it/s]Training Progress:   2%|▏         | 212992/10000000 [01:51<1:23:40, 1949.57it/s]Training Progress:   2%|▏         | 229376/10000000 [02:04<1:37:21, 1672.67it/s]Training Progress:   2%|▏         | 245760/10000000 [02:12<1:32:07, 1764.56it/s]Training Progress:   3%|▎         | 262144/10000000 [02:20<1:28:47, 1827.94it/s]Training Progress:   3%|▎         | 278528/10000000 [02:29<1:26:10, 1880.10it/s]Training Progress:   3%|▎         | 294912/10000000 [02:37<1:24:31, 1913.73it/s]Training Progress:   3%|▎         | 311296/10000000 [02:45<1:22:56, 1946.89it/s]Training Progress:   3%|▎         | 327680/10000000 [02:58<1:37:07, 1659.73it/s]Training Progress:   3%|▎         | 344064/10000000 [03:06<1:31:51, 1752.06it/s]Training Progress:   4%|▎         | 360448/10000000 [03:14<1:28:21, 1818.16it/s]Training Progress:   4%|▍         | 376832/10000000 [03:23<1:25:37, 1873.18it/s]Training Progress:   4%|▍         | 393216/10000000 [03:31<1:23:50, 1909.71it/s]Training Progress:   4%|▍         | 409600/10000000 [03:39<1:22:10, 1945.29it/s]Training Progress:   4%|▍         | 409600/10000000 [03:50<1:22:10, 1945.29it/s]Training Progress:   4%|▍         | 425984/10000000 [03:54<1:42:07, 1562.59it/s]Training Progress:   4%|▍         | 442368/10000000 [04:02<1:35:05, 1675.25it/s]Training Progress:   5%|▍         | 458752/10000000 [04:11<1:30:24, 1758.89it/s]Training Progress:   5%|▍         | 475136/10000000 [04:19<1:26:46, 1829.30it/s][LOADING HYPERPARAMETERS...]
+algo : ppo
+n_envs : 64
+n_steps : 256
+epoch : 3
+mini_batch_per_epoch : 8
+mini_batch_size : 2048
+gamma : 0.999
+lmbda : 0.95
+learning_rate : 0.0005
+grad_clip_norm : 0.5
+eps_clip : 0.2
+value_coef : 0.5
+entropy_coef : 0.01
+normalize_adv : True
+normalize_rew : True
+use_gae : True
+architecture : impala
+recurrent : False
+INITIALIZAING ENVIRONMENTS...
+building procgen...wandb: Currently logged in as: garrettebaker. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.16.2
+wandb: Run data is saved locally in /workspace/train-procgen-pytorch/wandb/run-20240113_020504-7wyzbzse
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run lyric-resonance-20
+wandb: ⭐️ View project at https://wandb.ai/garrettebaker/procgen
+wandb: 🚀 View run at https://wandb.ai/garrettebaker/procgen/runs/7wyzbzse
+done
+INITIALIZAING LOGGER...
+INTIALIZING MODEL...
+INITIALIZAING STORAGE...
+INTIALIZING AGENT...
+START TRAINING...
+Training Progress:   0%|          | 0/10000000 [00:00<?, ?it/s]Training Progress:   0%|          | 16384/10000000 [00:08<1:25:46, 1940.07it/s]Training Progress:   0%|          | 32768/10000000 [00:16<1:24:26, 1967.11it/s]Training Progress:   0%|          | 49152/10000000 [00:24<1:23:26, 1987.53it/s]Training Progress:   1%|          | 65536/10000000 [00:33<1:23:10, 1990.79it/s]Training Progress:   1%|          | 81920/10000000 [00:41<1:22:26, 2004.95it/s]Training Progress:   1%|          | 98304/10000000 [00:49<1:22:15, 2006.15it/s]Training Progress:   1%|          | 114688/10000000 [00:57<1:21:44, 2015.62it/s]Training Progress:   1%|          | 114688/10000000 [01:00<1:26:31, 1904.15it/s]
+Traceback (most recent call last):
+  File "/workspace/train-procgen-pytorch/train.py", line 142, in <module>
+    agent.train(num_timesteps, num_checkpoints)
+  File "/workspace/train-procgen-pytorch/agents/ppo.py", line 166, in train
+    create_gif(video_frames, self.logger.logdir + f'/episode_{self.t}.gif')
+  File "/workspace/train-procgen-pytorch/agents/ppo.py", line 11, in create_gif
+    with imageio.get_writer(filename, mode='I') as writer:
+  File "/usr/local/lib/python3.10/dist-packages/imageio/v2.py", line 197, in __exit__
+    self.close()
+  File "/usr/local/lib/python3.10/dist-packages/imageio/v2.py", line 190, in close
+    self.instance.close()
+  File "/usr/local/lib/python3.10/dist-packages/imageio/plugins/pillow.py", line 144, in close
+    self._flush_writer()
+  File "/usr/local/lib/python3.10/dist-packages/imageio/plugins/pillow.py", line 485, in _flush_writer
+    primary_image.save(self._request.get_file(), **self.save_args)
+  File "/usr/local/lib/python3.10/dist-packages/PIL/Image.py", line 2353, in save
+    save_handler(self, fp, filename)
+  File "/usr/local/lib/python3.10/dist-packages/PIL/GifImagePlugin.py", line 653, in _save_all
+    _save(im, fp, filename, save_all=True)
+  File "/usr/local/lib/python3.10/dist-packages/PIL/GifImagePlugin.py", line 664, in _save
+    if not save_all or not _write_multiple_frames(im, fp, palette):
+  File "/usr/local/lib/python3.10/dist-packages/PIL/GifImagePlugin.py", line 579, in _write_multiple_frames
+    im_frame = _normalize_mode(im_frame.copy())
+  File "/usr/local/lib/python3.10/dist-packages/PIL/GifImagePlugin.py", line 485, in _normalize_mode
+    im = im.convert("P", palette=Image.Palette.ADAPTIVE)
+  File "/usr/local/lib/python3.10/dist-packages/PIL/Image.py", line 1026, in convert
+    im = self.im.quantize(colors)
+KeyboardInterrupt
+wandb: - 0.005 MB of 0.005 MB uploadedwandb: \ 0.005 MB of 0.005 MB uploadedwandb: | 0.009 MB of 0.009 MB uploaded (0.003 MB deduped)wandb: / 0.009 MB of 0.015 MB uploaded (0.003 MB deduped)wandb: - 0.015 MB of 0.015 MB uploaded (0.003 MB deduped)wandb: 
+wandb: Run history:
+wandb: Episode ▁▂▃▅▆▇█
+wandb:  Reward ▂▂▇▁█▂▇
+wandb: 
+wandb: Run summary:
+wandb: Episode 114688
+wandb:  Reward 0.0061
+wandb: 
+wandb: 🚀 View run lyric-resonance-20 at: https://wandb.ai/garrettebaker/procgen/runs/7wyzbzse
+wandb: ️⚡ View job at https://wandb.ai/garrettebaker/procgen/jobs/QXJ0aWZhY3RDb2xsZWN0aW9uOjEyOTc1NjczOQ==/version_details/v4
+wandb: Synced 5 W&B file(s), 0 media file(s), 2 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20240113_020504-7wyzbzse/logs
+[LOADING HYPERPARAMETERS...]
+algo : ppo
+n_envs : 64
+n_steps : 256
+epoch : 3
+mini_batch_per_epoch : 8
+mini_batch_size : 2048
+gamma : 0.999
+lmbda : 0.95
+learning_rate : 0.0005
+grad_clip_norm : 0.5
+eps_clip : 0.2
+value_coef : 0.5
+entropy_coef : 0.01
+normalize_adv : True
+normalize_rew : True
+use_gae : True
+architecture : impala
+recurrent : False
+INITIALIZAING ENVIRONMENTS...
+building procgen...wandb: Currently logged in as: garrettebaker. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.16.2
+wandb: Run data is saved locally in /workspace/train-procgen-pytorch/wandb/run-20240113_020651-eg5esd03
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run lively-moon-21
+wandb: ⭐️ View project at https://wandb.ai/garrettebaker/procgen
+wandb: 🚀 View run at https://wandb.ai/garrettebaker/procgen/runs/eg5esd03
+done
+INITIALIZAING LOGGER...
+INTIALIZING MODEL...
+INITIALIZAING STORAGE...
+INTIALIZING AGENT...
+START TRAINING...
+Training Progress:   0%|          | 0/200000000 [00:00<?, ?it/s]Training Progress:   0%|          | 16384/200000000 [00:08<28:34:48, 1943.69it/s]Training Progress:   0%|          | 32768/200000000 [00:16<28:11:05, 1970.78it/s]Training Progress:   0%|          | 49152/200000000 [00:24<27:53:41, 1991.12it/s]Training Progress:   0%|          | 65536/200000000 [00:33<27:52:22, 1992.52it/s]Training Progress:   0%|          | 81920/200000000 [00:41<27:40:26, 2006.67it/s]Training Progress:   0%|          | 98304/200000000 [00:49<27:40:45, 2006.14it/s]Training Progress:   0%|          | 114688/200000000 [00:57<27:28:56, 2020.33it/s]Training Progress:   0%|          | 131072/200000000 [01:05<27:44:46, 2000.95it/s]Training Progress:   0%|          | 147456/200000000 [01:14<28:17:15, 1962.49it/s]Training Progress:   0%|          | 163840/200000000 [01:22<28:39:52, 1936.54it/s]Training Progress:   0%|          | 180224/200000000 [01:32<29:24:24, 1887.50it/s]Training Progress:   0%|          | 196608/200000000 [01:41<30:28:36, 1821.09it/s]

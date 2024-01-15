@@ -5,7 +5,10 @@ import torch
 
 class Flatten(nn.Module):
     def forward(self, x):
-        return x.view(x.size(0), -1)
+        # print(f"x's size: {x.size()}")
+        # return x.view(x.size(0), -1)
+        return x.reshape(x.size(0), -1)
+
 
 
 class MlpModel(nn.Module):
