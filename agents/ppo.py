@@ -123,6 +123,44 @@ class PPO(BaseAgent):
                    'Loss/entropy': np.mean(entropy_loss_list)}
         return summary
 
+    def generate_data_loader(self, num_samples):
+        # only works with non-recurrent policies
+        assert not self.policy.is_recurrent()
+        observations = []
+        rewards = []
+        discounted_rewards = []
+
+        obs = self.env.reset()
+        hidden_state = np.zeros((self.n_envs, self.storage.hidden_state_size))
+        done = np.zeros(self.n_envs)
+        episode_rewards = []
+
+        for _ in range(num_samples//self.n_envs):
+            act, _, _, _ = self.predict(obs, hidden_state, done)
+            next_obs, rew, done, _ = self.env.step(act)
+
+            observations.append(next_obs)
+            rewards.append(rew)
+
+            if done.any():
+                for t in reversed(range(len(episode_rewards))):
+                    R = episode_rewards[t] + (self.gamma * R if t < len(episode_rewards) - 1 else 0)
+                    discounted_rewards.insert(0, R)
+
+                obs = self.env.reset()
+                episode_rewards = []
+        for t in reversed(range(len(episode_rewards))):
+            R = episode_rewards[t] + (self.gamma * R if t < len(episode_rewards) - 1 else 0)
+            discounted_rewards.insert(0, R)
+        
+        obs_tensor = torch.FloatTensor(np.array(observations)).to(device=self.device)
+        rew_tensor = torch.FloatTensor(np.array(discounted_rewards)).to(device=self.device)
+
+        dataset = torch.utils.data.TensorDataset(obs_tensor, rew_tensor)
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size=self.mini_batch_size)
+
+        return dataloader
+
     def train(self, num_timesteps, num_checkpoints):
         wandb.init(project="procgen")
         save_every = num_timesteps // num_checkpoints
