@@ -6,6 +6,7 @@ import numpy as np
 import imageio
 from tqdm import tqdm
 import wandb
+import sys
 
 def create_gif(observations, filename):
     with imageio.get_writer(filename, mode='I') as writer:
@@ -124,37 +125,37 @@ class PPO(BaseAgent):
         return summary
 
     def generate_data_loader(self, num_samples):
-        # only works with non-recurrent policies
         assert not self.policy.is_recurrent()
         observations = []
         rewards = []
-        discounted_rewards = []
 
         obs = self.env.reset()
         hidden_state = np.zeros((self.n_envs, self.storage.hidden_state_size))
         done = np.zeros(self.n_envs)
-        episode_rewards = []
-
-        for _ in range(num_samples//self.n_envs):
+        episode_begin = 0
+        for i in range(num_samples//self.n_envs):
             act, _, _, _ = self.predict(obs, hidden_state, done)
             next_obs, rew, done, _ = self.env.step(act)
 
             observations.append(next_obs)
-            rewards.append(rew)
+            rewards.append(rew) 
+            obs = next_obs
+            
+            if np.any(done):
+                # propagate the reward backward to calculate the expected discounted reward for the episode
+                # Each reward (rew) and observation (obs) in rewards and observations is a numpy array of batches
+                # one of the batches succeeds, the others fail. We need to propagate the successful reward backward
 
-            if done.any():
-                for t in reversed(range(len(episode_rewards))):
-                    R = episode_rewards[t] + (self.gamma * R if t < len(episode_rewards) - 1 else 0)
-                    discounted_rewards.insert(0, R)
+                for j in range(i, episode_begin, -1):
+                    rewards[j - 1] += self.gamma * rewards[j] * (1 - done[j])
 
-                obs = self.env.reset()
-                episode_rewards = []
-        for t in reversed(range(len(episode_rewards))):
-            R = episode_rewards[t] + (self.gamma * R if t < len(episode_rewards) - 1 else 0)
-            discounted_rewards.insert(0, R)
-        
-        obs_tensor = torch.FloatTensor(np.array(observations)).to(device=self.device)
-        rew_tensor = torch.FloatTensor(np.array(discounted_rewards)).to(device=self.device)
+                episode_begin = i+1
+                # exit for troubleshooting
+                # sys.exit()
+        obs_tensor = torch.FloatTensor(np.array(observations)).to(device=self.device).squeeze(0)
+        rew_tensor = torch.FloatTensor(np.array(rewards)).to(device=self.device).squeeze(0)
+        # print(f"Observation tensor size: {obs_tensor.size()}")
+        # print(f"Reward tensor size: {rew_tensor.size()}")
 
         dataset = torch.utils.data.TensorDataset(obs_tensor, rew_tensor)
         dataloader = torch.utils.data.DataLoader(dataset, batch_size=self.mini_batch_size)
