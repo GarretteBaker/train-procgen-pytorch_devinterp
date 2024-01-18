@@ -254,5 +254,16 @@ for artifact in tqdm(artifacts):
             "gamma": gamma
         })
     except:
-        pass
+        wandb.log({
+            "Model number": get_model_number(artifact.name),
+            "Learning coeff": None, 
+            "lc_summary": None,
+            "lc_trace": None, 
+            "tildebeta": tildebeta,
+            "epsilon": epsilon,
+            "tildegamma": tildegamma,
+            "nbeta": nbeta,
+            "temperature": temperature,
+            "gamma": gamma
+        })
     shutil.rmtree(artifact_dir)
