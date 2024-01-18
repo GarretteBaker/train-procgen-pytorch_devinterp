@@ -228,17 +228,21 @@ def estimate_llcs_sweeper(model, epsilons, gammas):
                 temperature="adaptive",
             )
             pair = (epsilon, gamma)
-            results[pair] = estimate_learning_coeff_with_summary(
-                model=model,
-                loader=dataloader,
-                criterion=criterion,
-                sampling_method=SGLD,
-                optimizer_kwargs=optim_kwargs,
-                num_chains=num_chains,
-                num_draws=num_draws,
-                device=device,
-                online=True,
-            )
+            try:
+                results[pair] = estimate_learning_coeff_with_summary(
+                    model=model,
+                    loader=dataloader,
+                    criterion=criterion,
+                    sampling_method=SGLD,
+                    optimizer_kwargs=optim_kwargs,
+                    num_chains=num_chains,
+                    num_draws=num_draws,
+                    device=device,
+                    online=True,
+                )
+            except:
+                print("failed")
+                results[pair] = None
     return results
 
 def plot_single_graph(result, title=''):
@@ -294,6 +298,8 @@ def plot_sweep_single_model(results, epsilons, gammas, filename, **kwargs):
     for i, epsilon in enumerate(epsilons):
         for j, gamma in enumerate(gammas):
             result = results[(epsilon, gamma)]
+            if result is None:
+                continue
             # plot loss traces
             loss_traces = result['loss/trace']
             for trace in loss_traces:
@@ -343,7 +349,13 @@ def plot_sweep_single_model(results, epsilons, gammas, filename, **kwargs):
 
 results = estimate_llcs_sweeper(value_network, epsilons, gammas)
 
-plot_sweep_single_model(results, epsilons, gammas, "calibration_sweep_model_8000.png", title='Calibration sweep of model for lr ($\epsilon$) and elasticity ($\gamma$)')
+plot_sweep_single_model(
+    results, 
+    epsilons, 
+    gammas, 
+    "calibration_sweep_model_8000.png", 
+    title='Calibration sweep of model for lr ($\epsilon$) and elasticity ($\gamma$)'
+)
 
 with open('calibration_sweep_results_model_8000.pkl', 'wb') as f:
     pickle.dump(results, f)
@@ -380,11 +392,6 @@ elif "model_state_dict" in loaded_checkpoint:
 
 # epsilons from 1e-6 to 1e-15
 # gammas from 1e6 to 1e15
-epsilons = np.logspace(-7, -15, 10)
-gammas = np.logspace(6, 15, 10)
-num_chains = 8
-num_draws = 2000
-
 # epsilons = [1e-7, 1e-8]
 # gammas = [1e6, 1e7]
 # num_chains = 1
@@ -528,5 +535,11 @@ results = estimate_llcs_sweeper(value_network, epsilons, gammas)
 with open('calibration_sweep_results_model_100.pkl', 'wb') as f:
     pickle.dump(results, f)
 
-plot_sweep_single_model(results, epsilons, gammas, "calibration_sweep_model_100.png", title='Calibration sweep of model for lr ($\epsilon$) and elasticity ($\gamma$)')
+plot_sweep_single_model(
+    results, 
+    epsilons, 
+    gammas, 
+    "calibration_sweep_model_100.png", 
+    title='Calibration sweep of model for lr ($\epsilon$) and elasticity ($\gamma$)'
+)
 
