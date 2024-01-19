@@ -203,13 +203,8 @@ for artifact in tqdm(artifacts):
     elif "model_state_dict" in loaded_checkpoint:
         value_network.load_state_dict(loaded_checkpoint['model_state_dict'])
 
-    tildebeta = 1e-7
-    epsilon = 1e-7 # learning rate
-    tildegamma = 1
-
-    nbeta = 2 * tildebeta / epsilon
-    temperature = 1 / nbeta
-    gamma = 2 * tildegamma / epsilon
+    epsilon = 3.594e-12
+    gamma = 1e7
 
     # Jesse says
     # \tilde\beta = \epsilon * n\beta / 2, \tilde gamma= \epsilon * \gamma / 2, \epsilon=\epsilon
