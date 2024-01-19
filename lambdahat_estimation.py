@@ -218,9 +218,9 @@ for artifact in tqdm(artifacts):
             loader = dataloader, 
             criterion = lambda x, y: torch.nn.functional.cross_entropy(x, y),
             sampling_method=SGLD, 
-            optimizer_kwargs=dict(lr=epsilon, elasticity=gamma, num_samples=datapoints, temperature=temperature),
-            num_chains=3, 
-            num_draws=200, 
+            optimizer_kwargs=dict(lr=epsilon, elasticity=gamma, num_samples=datapoints, temperature="adaptive"),
+            num_chains=4, 
+            num_draws=500, 
             num_burnin_steps=0, 
             num_steps_bw_draws=1, 
             device=device
@@ -241,11 +241,7 @@ for artifact in tqdm(artifacts):
             "Learning coeff": learning_coeff, 
             "lc_summary": table,
             "lc_trace": wandb.Image("lc_trace.png"), 
-            "tildebeta": tildebeta,
             "epsilon": epsilon,
-            "tildegamma": tildegamma,
-            "nbeta": nbeta,
-            "temperature": temperature,
             "gamma": gamma
         })
     except:
@@ -254,11 +250,7 @@ for artifact in tqdm(artifacts):
             "Learning coeff": None, 
             "lc_summary": None,
             "lc_trace": None, 
-            "tildebeta": tildebeta,
             "epsilon": epsilon,
-            "tildegamma": tildegamma,
-            "nbeta": nbeta,
-            "temperature": temperature,
             "gamma": gamma
         })
     shutil.rmtree(artifact_dir)
