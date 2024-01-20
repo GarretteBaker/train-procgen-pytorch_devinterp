@@ -1,3 +1,4 @@
+#%%
 import wandb
 from tqdm import tqdm
 import torch
@@ -22,7 +23,12 @@ from agents.ppo import PPO as AGENT
 import random
 import yaml
 from devinterp.utils import plot_trace
+import pickle
+from devinterp.slt.gradient import GradientDistribution
+from matplotlib.collections import PatchCollection
+import matplotlib.ticker as ticker
 
+plt.rcParams["figure.figsize"]=15,12  # note: this cell may need to be re-run after creating a plot to take effect
 
 def plot_trace_and_save(trace, y_axis, name, x_axis='step', title=None, plot_mean=True, plot_std=True, fig_size=(12, 9), true_lc=None):
     num_chains, num_draws = trace.shape
@@ -94,12 +100,151 @@ def plot_trace_and_save(trace, y_axis, name, x_axis='step', title=None, plot_mea
 #     parser.add_argument('--log_level',        type=int, default = int(40), help='[10,20,30,40]')
 #     parser.add_argument('--num_checkpoints',  type=int, default = int(1), help='number of checkpoints to store')
 
-
-wandb.init(project="procgen-lambdahat-estimation")
 def get_model_number(model_name):
     # model is of format model_<number>:v<version>
     return int(model_name.split('_')[1].split(':')[0])
 
+def gradient_single_plot(gradients, param_name: str, color='blue', plot_zero=True, chain: int = None, filename = None):
+    grad_dist = gradients.grad_dists[param_name]
+    if chain is not None:
+        max_count = grad_dist[chain].max()
+    else:
+        max_count = grad_dist.sum(axis=0).max()
+
+    def get_color_alpha(count):
+        if count == 0:
+            return torch.tensor(0).to(gradients.device)
+        min_alpha = 0.35
+        max_alpha = 0.85
+        return (count / max_count) * (max_alpha - min_alpha) + min_alpha
+    
+    def build_rect(count, bin_min, bin_max, draw):
+        alpha = get_color_alpha(count)
+        pos = (draw, bin_min)
+        height = bin_max - bin_min
+        width = 1
+        return plt.Rectangle(pos, width, height, color=color, alpha=alpha.cpu().numpy().item(), linewidth=0)
+    
+    _, ax = plt.subplots()
+    patches = []
+    for draw in range(gradients.num_draws):
+        for pos in range(gradients.num_bins):
+            bin_min = gradients.min_grad + pos * gradients.bin_size
+            bin_max = bin_min + gradients.bin_size
+            if chain is None:
+                count = grad_dist[:, draw, pos].sum()
+            else:
+                count = grad_dist[chain, draw, pos]
+            if count != 0:
+                rect = build_rect(count, bin_min, bin_max, draw)
+                patches.append(rect)
+    patches = PatchCollection(patches, match_original=True)
+    ax.add_collection(patches)
+
+    # note that these y min/max values are relative to *all* gradients, not just the ones for this param
+    y_min = gradients.min_grad
+    y_max = gradients.max_grad
+    # ensure the 0 line is visible
+    y_min = y_min if y_min < 0 else -y_max
+    y_max = y_max if y_max > 0 else -y_min
+    plt.ylim(y_min, y_max)
+
+    plt.xlim(0, gradients.num_draws)
+    plt.gca().xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
+    if plot_zero:
+        plt.axhline(color='black', linestyle=':', linewidth=1)
+
+    plt.xlabel('Sampler steps')
+    plt.ylabel('gradient distribution')
+    plt.title(f'Distribution of {param_name} gradients at each sampler step')
+
+    if filename is not None:
+        plt.savefig(filename)
+    else:
+        plt.show()
+
+def get_artifact_network_and_data(artifact_number, datapoints=100, batch_size=100):
+    artifacts = run.logged_artifacts()
+
+    artifact = artifacts[artifact_number]
+    artifact_to_download = api.artifact(f"{project_name}/{artifact.name}", type="model")
+    artifact_dir = artifact_to_download.download()
+    # artifact_dir = "artifacts/model_160022528:v0"
+    model_file = f"{artifact_dir}/{artifact.name[:-3]}.pth"
+
+    hidden_state_dim = 0
+    observation_space = env.observation_space
+    observation_shape = observation_space.shape
+    storage = Storage(observation_shape, hidden_state_dim, n_steps, n_envs, device)
+
+    loaded_checkpoint = torch.load(model_file)
+    model = ImpalaModel(in_channels = observation_shape[0])
+    policy = CategoricalPolicy(model, False, env.action_space.n)
+    if "state_dict" in loaded_checkpoint:
+        policy.load_state_dict(loaded_checkpoint['state_dict'])
+    elif "model_state_dict" in loaded_checkpoint:
+        policy.load_state_dict(loaded_checkpoint['model_state_dict'])
+    policy.to(device)
+    agent = AGENT(env, policy, logger, storage, device, num_checkpoints, **hyperparameters)
+
+    dataloader, dataset = agent.generate_data_loader(datapoints, batch_size)
+    value_network = CategoricalValueNetwork(model, False, env.action_space.n)
+    if "state_dict" in loaded_checkpoint:
+        value_network.load_state_dict(loaded_checkpoint['state_dict'])
+    elif "model_state_dict" in loaded_checkpoint:
+        value_network.load_state_dict(loaded_checkpoint['model_state_dict'])
+    return dataloader, dataset, value_network
+
+def optimize_value_network(value_network, dataloader, epochs=50, lr=1e-5):
+    value_network.to(device)
+    optimizer = torch.optim.Adam(value_network.parameters(), lr=lr)
+    criterion = torch.nn.MSELoss()
+
+    epochs_time_series = []
+    batches = []
+    value_losses = []
+    grad_norms = []
+    grad_means = []
+    grad_stds = []
+    gradient_hists = []
+
+    for epoch in tqdm(range(epochs)):
+        for batch_idx, batch in enumerate(dataloader):
+            optimizer.zero_grad()
+            observations, returns = batch
+            observations = observations.to(device)
+            returns = returns.to(device)
+            values_pred = value_network(observations)
+            value_loss = criterion(values_pred, returns)
+
+            value_loss.backward()
+            optimizer.step()
+
+            # Calculate gradients statistics
+            grad_norm = torch.norm(torch.stack([torch.norm(p.grad.detach()) for p in value_network.parameters() if p.grad is not None]))
+            grad_mean = torch.mean(torch.stack([torch.mean(p.grad.detach()) for p in value_network.parameters() if p.grad is not None]))
+            grad_std = torch.std(torch.stack([torch.std(p.grad.detach()) for p in value_network.parameters() if p.grad is not None]))
+
+            epochs_time_series.append(epoch)
+            batches.append(batch_idx)
+            value_losses.append(value_loss.item())
+            grad_norms.append(grad_norm.item())
+            grad_means.append(grad_mean.item())
+            grad_stds.append(grad_std.item())
+            gradient_hists.append({name: p.grad.cpu().numpy() for name, p in value_network.named_parameters() if p.grad is not None})
+
+    wandb.log({
+        "epochs": epochs_time_series,
+        "batches": batches,
+        'value_loss': value_losses,
+        'grad_norm': grad_norms,
+        'grad_mean': grad_means,
+        'grad_std': grad_stds,
+    })
+
+    return value_network    
+
+#%%
 # Set your specific run ID here
 run_id = "jp9tjfzd"
 project_name = "procgen"
@@ -170,87 +315,84 @@ if not (os.path.exists(logdir)):
     os.makedirs(logdir)
 logger = Logger(n_envs, logdir)
 
-# List all artifacts for this run
-artifacts = run.logged_artifacts()
-for artifact in tqdm(artifacts):
-    # artifact = artifacts[8000]
-    artifact_to_download = api.artifact(f"{project_name}/{artifact.name}", type="model")
-    artifact_dir = artifact_to_download.download()
-    # artifact_dir = "artifacts/model_160022528:v0"
-    model_file = f"{artifact_dir}/{artifact.name[:-3]}.pth"
+wandb.init(project="procgen", name="procgen-lambdahat-estimation")
+criterion = torch.nn.MSELoss()
+epsilon = 4.64e-7
+gamma = 129
+num_chains = 4
+num_draws = 2000
+datapoints = 1000
+batch_size = 100
+temperature = "adaptive"
+noise_level = 1.0
+num_burnin_steps = 0
+num_steps_bw_draws = 1
+wandb.log({
+    'epsilon': epsilon,
+    'gamma': gamma,
+    'num_chains': num_chains,
+    'num_draws': num_draws,
+    'datapoints': datapoints,
+    'batch_size': batch_size,
+    'temperature': temperature,
+    'noise_level': noise_level,
+    'num_burnin_steps': num_burnin_steps,
+    'num_steps_bw_draws': num_steps_bw_draws
+})
 
+for artifact_number in tqdm(range(8000)):
+    dataloader, dataset, value_network = get_artifact_network_and_data(
+        artifact_number = artifact_number, 
+        datapoints = datapoints, 
+        batch_size = batch_size
+    )
 
-    hidden_state_dim = 0
-    observation_space = env.observation_space
-    observation_shape = observation_space.shape
-    storage = Storage(observation_shape, hidden_state_dim, n_steps, n_envs, device)
+    value_network = optimize_value_network(value_network, dataloader)
+    torch.save(value_network.state_dict(), 'value_network_local_min.pth')
 
-    loaded_checkpoint = torch.load(model_file)
-    model = ImpalaModel(in_channels = observation_shape[0])
-    policy = CategoricalPolicy(model, False, env.action_space.n)
-    if "state_dict" in loaded_checkpoint:
-        policy.load_state_dict(loaded_checkpoint['state_dict'])
-    elif "model_state_dict" in loaded_checkpoint:
-        policy.load_state_dict(loaded_checkpoint['model_state_dict'])
-    policy.to(device)
-    agent = AGENT(env, policy, logger, storage, device, num_checkpoints, **hyperparameters)
+    optim_kwargs = dict(
+        lr=epsilon,
+        noise_level=noise_level,
+        elasticity=gamma,
+        num_samples=len(dataset),
+        temperature=temperature,
+    )
 
-    datapoints = 100
-    dataloader = agent.generate_data_loader(datapoints)
-    value_network = CategoricalValueNetwork(model, False, env.action_space.n)
-    if "state_dict" in loaded_checkpoint:
-        value_network.load_state_dict(loaded_checkpoint['state_dict'])
-    elif "model_state_dict" in loaded_checkpoint:
-        value_network.load_state_dict(loaded_checkpoint['model_state_dict'])
+    learning_coeff_stats = estimate_learning_coeff_with_summary(
+        value_network, 
+        loader = dataloader, 
+        criterion = criterion, 
+        sampling_method = SGLD, 
+        optimizer_kwargs=optim_kwargs,
+        num_chains = num_chains, 
+        num_draws = num_draws, 
+        num_burnin_steps = num_burnin_steps,
+        num_steps_bw_draws = num_steps_bw_draws,
+        device = device
+    )
 
-    epsilon = 3.594e-12
-    gamma = 1e7
+    trace = learning_coeff_stats['loss/trace']
+    llc = learning_coeff_stats['llc/mean']
+    llc_std = learning_coeff_stats['llc/std']
 
-    # Jesse says
-    # \tilde\beta = \epsilon * n\beta / 2, \tilde gamma= \epsilon * \gamma / 2, \epsilon=\epsilon
-    # I'd start by setting \tilde \beta to be on the order of what the LR was during training.
-    # Then choose an epsilon that's  1-2 OOMs smaller than the \tilde \beta
-    # Increase gamma until you don't see negatives. Decrease \tilde\beta and \epsilon until you don't see divergences.
+    plot_trace_and_save(
+        trace = trace,
+        y_axis = 'L_n(w)',
+        name = "trace_plot.png",
+        x_axis = "step", 
+        title = " Learning Coefficient Trace",
+        plot_mean=False,
+        plot_std=False,
+        fig_size=(12, 9),
+        true_lc = None
+    )
 
-    try:
-        learning_coeff_with_stats = estimate_learning_coeff_with_summary(
-            value_network, 
-            loader = dataloader, 
-            criterion = lambda x, y: torch.nn.functional.cross_entropy(x, y),
-            sampling_method=SGLD, 
-            optimizer_kwargs=dict(lr=epsilon, elasticity=gamma, num_samples=datapoints, temperature="adaptive"),
-            num_chains=4, 
-            num_draws=500, 
-            num_burnin_steps=0, 
-            num_steps_bw_draws=1, 
-            device=device
-        )
+    wandb.log({
+        'artifact_number': artifact_number,
+        'llc': llc,
+        'llc_std': llc_std, 
+        'learning_coeff_stats': learning_coeff_stats, 
+        "trace plot": wandb.Image("trace_plot.png")
+    })
 
-
-        trace = learning_coeff_with_stats.pop("loss/trace")
-        learning_coeff = learning_coeff_with_stats.pop("llc/mean")
-
-        table_data = [[key, val] for key, val in learning_coeff_with_stats.items()]
-        table = wandb.Table(columns=["Metric", "Value"], data=table_data)
-
-        print("Lambda hat estimates:")
-        print(yaml.dump(learning_coeff_with_stats))
-        plot_trace_and_save(trace, 'L_n(w)', "lc_trace.png", x_axis='Step', title=' Learning Coefficient Trace', plot_mean=False, plot_std=False, fig_size=(12, 9), true_lc = None)
-        wandb.log({
-            "Model number": get_model_number(artifact.name),
-            "Learning coeff": learning_coeff, 
-            "lc_summary": table,
-            "lc_trace": wandb.Image("lc_trace.png"), 
-            "epsilon": epsilon,
-            "gamma": gamma
-        })
-    except:
-        wandb.log({
-            "Model number": get_model_number(artifact.name),
-            "Learning coeff": None, 
-            "lc_summary": None,
-            "lc_trace": None, 
-            "epsilon": epsilon,
-            "gamma": gamma
-        })
-    shutil.rmtree(artifact_dir)
+wandb.finish()

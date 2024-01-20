@@ -124,7 +124,7 @@ class PPO(BaseAgent):
                    'Loss/entropy': np.mean(entropy_loss_list)}
         return summary
 
-    def generate_data_loader(self, num_samples):
+    def generate_data_loader(self, num_samples, batch_size):
         assert not self.policy.is_recurrent()
         observations = []
         rewards = []
@@ -154,13 +154,16 @@ class PPO(BaseAgent):
                 # sys.exit()
         obs_tensor = torch.FloatTensor(np.array(observations)).to(device=self.device).squeeze(0)
         rew_tensor = torch.FloatTensor(np.array(rewards)).to(device=self.device).squeeze(0)
-        # print(f"Observation tensor size: {obs_tensor.size()}")
-        # print(f"Reward tensor size: {rew_tensor.size()}")
+        outer_batch, inner_batch, _, _, _ = obs_tensor.size()
+        obs_tensor = obs_tensor.view(outer_batch * inner_batch, *obs_tensor.size()[2:])
+        rew_tensor = rew_tensor.view(outer_batch * inner_batch)
+        print(f"Observation tensor size: {obs_tensor.size()}")
+        print(f"Reward tensor size: {rew_tensor.size()}")
 
         dataset = torch.utils.data.TensorDataset(obs_tensor, rew_tensor)
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size=self.mini_batch_size)
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size)
 
-        return dataloader
+        return dataloader, dataset
 
     def train(self, num_timesteps, num_checkpoints):
         wandb.init(project="procgen")
