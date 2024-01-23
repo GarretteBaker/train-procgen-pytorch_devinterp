@@ -85,3 +85,5 @@ wandb/
 
 # logs
 logs/
+
+artifacts/
