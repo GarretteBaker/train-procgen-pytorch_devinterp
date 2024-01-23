@@ -100,11 +100,6 @@ def plot_trace_and_save(trace, y_axis, name, x_axis='step', title=None, plot_mea
 #     parser.add_argument('--log_level',        type=int, default = int(40), help='[10,20,30,40]')
 #     parser.add_argument('--num_checkpoints',  type=int, default = int(1), help='number of checkpoints to store')
 
-epsilons = np.logspace(-4, -11, 10)
-gammas = np.logspace(1, 6, 10)
-num_chains = 8
-num_draws = 2000
-
 def get_model_number(model_name):
     # model is of format model_<number>:v<version>
     return int(model_name.split('_')[1].split(':')[0])
@@ -253,8 +248,8 @@ def estimate_llcs_sweeper(model, epsilons, gammas, dataloader, dataset):
             )
             pair = (epsilon, gamma)
             try:
-                #grad_dist = GradientDistribution(num_chains=num_chains, num_draws=num_draws, min_bins=40)
-                #callbacks = [grad_dist]
+                # grad_norm = 
+                # callbacks = [grad_dist]
                 callbacks = []
                 results[pair] = estimate_learning_coeff_with_summary(
                     model=model,
@@ -445,6 +440,13 @@ logdir = os.path.join('logs', logdir)
 if not (os.path.exists(logdir)):
     os.makedirs(logdir)
 logger = Logger(n_envs, logdir)
+
+
+#%%
+epsilons = np.logspace(-4, -11, 10)
+gammas = np.logspace(1, 6, 10)
+num_chains = 8
+num_draws = 2000
 
 print("Fetching model and dataloader 8000")
 dataloader, dataset, value_network = get_artifact_network_and_data(

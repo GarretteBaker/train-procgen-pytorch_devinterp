@@ -24,9 +24,11 @@ import random
 import yaml
 from devinterp.utils import plot_trace
 import pickle
-from devinterp.slt.gradient import GradientDistribution
 from matplotlib.collections import PatchCollection
 import matplotlib.ticker as ticker
+
+from devinterp.slt import OnlineLLCEstimator, sample, validate_callbacks, LLCEstimator
+from devinterp.slt.norms import GradientNorm
 
 plt.rcParams["figure.figsize"]=15,12  # note: this cell may need to be re-run after creating a plot to take effect
 
@@ -188,11 +190,15 @@ def get_artifact_network_and_data(artifact_number, datapoints=100, batch_size=10
     agent = AGENT(env, policy, logger, storage, device, num_checkpoints, **hyperparameters)
 
     dataloader, dataset = agent.generate_data_loader(datapoints, batch_size)
-    value_network = CategoricalValueNetwork(model, False, env.action_space.n)
+    value_network = CategoricalValueNetwork(model, False)
     if "state_dict" in loaded_checkpoint:
+        loaded_checkpoint['state_dict'] = {k: v for k,v in loaded_checkpoint['state_dict'].items() if "policy" not in k}
         value_network.load_state_dict(loaded_checkpoint['state_dict'])
     elif "model_state_dict" in loaded_checkpoint:
+        loaded_checkpoint['model_state_dict'] = {k: v for k,v in loaded_checkpoint['model_state_dict'].items() if "policy" not in k}
         value_network.load_state_dict(loaded_checkpoint['model_state_dict'])
+    # delete saved policy
+    os.remove(model_file)
     return dataloader, dataset, value_network
 
 def optimize_value_network(value_network, dataloader, epochs=50, lr=1e-5):
@@ -243,6 +249,39 @@ def optimize_value_network(value_network, dataloader, epochs=50, lr=1e-5):
     })
 
     return value_network    
+
+def run_callbacks(model, epsilon, gamma, dataloader, num_chains, num_draws, dataset, callbacks, device, criterion):
+    assert validate_callbacks(callbacks)
+    optim_kwargs = {
+        "lr": epsilon,
+        "elasticity": gamma,
+        "temperature": "adaptive",
+        "num_samples": len(dataset), 
+        "save_noise": True
+    }
+    
+    if callbacks is None:
+        llc_estimator = OnlineLLCEstimator(num_chains, num_draws, len(dataset), device=device)
+        callbacks = [llc_estimator]
+
+    sample(
+        model=model, 
+        loader=dataloader, 
+        criterion = criterion, 
+        optimizer_kwargs = optim_kwargs,
+        sampling_method = SGLD, 
+        num_chains = num_chains,
+        num_draws = num_draws, 
+        callbacks = callbacks, 
+        device=device
+    )
+    
+    results = {}
+
+    for callback in callbacks:
+        if hasattr(callback, "sample"):
+            results.update(callback.sample())
+    return results
 
 #%%
 # Set your specific run ID here
@@ -317,16 +356,18 @@ logger = Logger(n_envs, logdir)
 
 wandb.init(project="procgen", name="procgen-lambdahat-estimation")
 criterion = torch.nn.MSELoss()
-epsilon = 4.64e-7
-gamma = 129
-num_chains = 4
-num_draws = 2000
-datapoints = 1000
-batch_size = 100
+epsilon = 1e-6
+gamma = 1e5
+num_chains = 3
+num_draws = 25
+datapoints = 4000
+batch_size = 1000
 temperature = "adaptive"
 noise_level = 1.0
 num_burnin_steps = 0
 num_steps_bw_draws = 1
+num_epochs = 100
+skip_every = 8*15
 wandb.log({
     'epsilon': epsilon,
     'gamma': gamma,
@@ -337,43 +378,39 @@ wandb.log({
     'temperature': temperature,
     'noise_level': noise_level,
     'num_burnin_steps': num_burnin_steps,
-    'num_steps_bw_draws': num_steps_bw_draws
+    'num_steps_bw_draws': num_steps_bw_draws, 
+    'num_epochs': num_epochs
 })
 
-for artifact_number in tqdm(range(8000)):
+for artifact_number in tqdm(range(0, 8000, skip_every)):
     dataloader, dataset, value_network = get_artifact_network_and_data(
         artifact_number = artifact_number, 
         datapoints = datapoints, 
         batch_size = batch_size
     )
 
-    value_network = optimize_value_network(value_network, dataloader)
+    value_network = optimize_value_network(value_network, dataloader, epochs=num_epochs)
     torch.save(value_network.state_dict(), 'value_network_local_min.pth')
 
-    optim_kwargs = dict(
-        lr=epsilon,
-        noise_level=noise_level,
-        elasticity=gamma,
-        num_samples=len(dataset),
-        temperature=temperature,
-    )
-
-    learning_coeff_stats = estimate_learning_coeff_with_summary(
-        value_network, 
-        loader = dataloader, 
-        criterion = criterion, 
-        sampling_method = SGLD, 
-        optimizer_kwargs=optim_kwargs,
-        num_chains = num_chains, 
-        num_draws = num_draws, 
-        num_burnin_steps = num_burnin_steps,
-        num_steps_bw_draws = num_steps_bw_draws,
-        device = device
-    )
-
-    trace = learning_coeff_stats['loss/trace']
-    llc = learning_coeff_stats['llc/mean']
-    llc_std = learning_coeff_stats['llc/std']
+    llc_estimator = LLCEstimator(num_chains, num_draws, len(dataset), device=device)
+    grad_norms = GradientNorm(num_chains, num_draws, len(dataset), device=device)
+    callbacks = [llc_estimator, grad_norms]
+    results = run_callbacks(
+        model = value_network,
+        epsilon = epsilon,
+        gamma = gamma,
+        dataloader = dataloader,
+        num_chains = num_chains,
+        num_draws = num_draws,
+        dataset = dataset,
+        callbacks = callbacks,
+        device = device,
+        criterion = criterion
+    )    
+    trace = results['loss/trace']
+    llc = results['llc/mean']
+    llc_std = results['llc/std']
+    grad_norm = results['gradient_norm/trace'].mean()
 
     plot_trace_and_save(
         trace = trace,
@@ -386,12 +423,15 @@ for artifact_number in tqdm(range(8000)):
         fig_size=(12, 9),
         true_lc = None
     )
+    # delete value network
+    os.remove('value_network_local_min.pth')
 
     wandb.log({
         'artifact_number': artifact_number,
         'llc': llc,
         'llc_std': llc_std, 
-        'learning_coeff_stats': learning_coeff_stats, 
+        'learning_coeff_stats': results, 
+        'mean grad_norm': grad_norm,
         "trace plot": wandb.Image("trace_plot.png")
     })
 
