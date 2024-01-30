@@ -81,9 +81,12 @@ celerybeat-schedule
 .idea/
 
 # Weights & Biases
-wandb/
+wandb/*
 
 # logs
-logs/
-
-artifacts/
+artifacts/*
+filters/*
+logs/*
+models/*
+variance_data/*
+lambdahat_variance_estimation.ipynb

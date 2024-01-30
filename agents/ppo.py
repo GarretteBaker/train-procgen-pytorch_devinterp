@@ -161,7 +161,7 @@ class PPO(BaseAgent):
         print(f"Reward tensor size: {rew_tensor.size()}")
 
         dataset = torch.utils.data.TensorDataset(obs_tensor, rew_tensor)
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size)
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
         return dataloader, dataset
 

@@ -1,0 +1,6 @@
+gym
+gym3
+git+https://github.com/UlisseMini/circrl.git
+git+https://github.com/GarretteBaker/procgenAISC_devinterp.git
+git+https://github.com/GarretteBaker/procgen-tools-dev-interp.git
+devinterp

@@ -24,25 +24,15 @@ import random
 import yaml
 from devinterp.utils import plot_trace
 import pickle
+from devinterp.slt.gradient import GradientDistribution
 from matplotlib.collections import PatchCollection
 import matplotlib.ticker as ticker
-
-from devinterp.slt import OnlineLLCEstimator, sample, validate_callbacks, LLCEstimator
 from devinterp.slt.norms import GradientNorm
-
-import argparse
-
-torch.manual_seed(1)
-
+from devinterp.slt.llc import LLCEstimator, OnlineLLCEstimator
+from devinterp.slt import sample
+from devinterp.slt.callback import validate_callbacks
 
 plt.rcParams["figure.figsize"]=15,12  # note: this cell may need to be re-run after creating a plot to take effect
-
-parser = argparse.ArgumentParser()
-# adding start, end, and which gpu to use
-parser.add_argument('--start', type=int, default=0, help='start artifact number')
-parser.add_argument('--end', type=int, default=100, help='end artifact number')
-parser.add_argument('--gpu', type=int, default=0, help='gpu number')
-args = parser.parse_args()
 
 def plot_trace_and_save(trace, y_axis, name, x_axis='step', title=None, plot_mean=True, plot_std=True, fig_size=(12, 9), true_lc=None):
     num_chains, num_draws = trace.shape
@@ -114,6 +104,13 @@ def plot_trace_and_save(trace, y_axis, name, x_axis='step', title=None, plot_mea
 #     parser.add_argument('--log_level',        type=int, default = int(40), help='[10,20,30,40]')
 #     parser.add_argument('--num_checkpoints',  type=int, default = int(1), help='number of checkpoints to store')
 
+# parser stuff
+parser = argparse.ArgumentParser()
+parser.add_argument('--device',           type=str, default = 'cuda:0', required = False)
+args = parser.parse_args()
+device = torch.device(args.device)
+print(device)
+#time.sleep(10)
 def get_model_number(model_name):
     # model is of format model_<number>:v<version>
     return int(model_name.split('_')[1].split(':')[0])
@@ -177,14 +174,17 @@ def gradient_single_plot(gradients, param_name: str, color='blue', plot_zero=Tru
     else:
         plt.show()
 
-def get_artifact_network_and_data(artifact_number, datapoints=100, batch_size=100):
+def get_artifact_network_and_data(artifact_number, datapoints=100, batch_size=100, download=True):
     artifacts = run.logged_artifacts()
 
-    artifact = artifacts[artifact_number]
-    artifact_to_download = api.artifact(f"{project_name}/{artifact.name}", type="model")
-    artifact_dir = artifact_to_download.download()
-    # artifact_dir = "artifacts/model_160022528:v0"
-    model_file = f"{artifact_dir}/{artifact.name[:-3]}.pth"
+    if download:
+        artifact = artifacts[artifact_number]
+        artifact_to_download = api.artifact(f"{project_name}/{artifact.name}", type="model")
+        artifact_dir = artifact_to_download.download()
+        model_file = f"{artifact_dir}/{artifact.name[:-3]}.pth"
+    else:
+        artifacts_files = os.listdir("models")
+        model_file = f"models/{artifacts_files[artifact_number]}/{artifacts_files[artifact_number]}"
 
     hidden_state_dim = 0
     observation_space = env.observation_space
@@ -209,8 +209,6 @@ def get_artifact_network_and_data(artifact_number, datapoints=100, batch_size=10
     elif "model_state_dict" in loaded_checkpoint:
         loaded_checkpoint['model_state_dict'] = {k: v for k,v in loaded_checkpoint['model_state_dict'].items() if "policy" not in k}
         value_network.load_state_dict(loaded_checkpoint['model_state_dict'])
-    # delete saved policy
-    os.remove(model_file)
     return dataloader, dataset, value_network
 
 def optimize_value_network(value_network, dataloader, epochs=50, lr=1e-5):
@@ -218,13 +216,12 @@ def optimize_value_network(value_network, dataloader, epochs=50, lr=1e-5):
     optimizer = torch.optim.Adam(value_network.parameters(), lr=lr)
     criterion = torch.nn.MSELoss()
 
-    epochs_time_series = []
-    batches = []
-    value_losses = []
-    grad_norms = []
-    grad_means = []
-    grad_stds = []
-    gradient_hists = []
+    # Initialize a new wandb run
+    wandb.init(
+        project="procgen-lambdahat-estimation", 
+        name="optimize_that_thing!", 
+        mode="offline"
+    )
 
     for epoch in tqdm(range(epochs)):
         for batch_idx, batch in enumerate(dataloader):
@@ -243,27 +240,23 @@ def optimize_value_network(value_network, dataloader, epochs=50, lr=1e-5):
             grad_mean = torch.mean(torch.stack([torch.mean(p.grad.detach()) for p in value_network.parameters() if p.grad is not None]))
             grad_std = torch.std(torch.stack([torch.std(p.grad.detach()) for p in value_network.parameters() if p.grad is not None]))
 
-            epochs_time_series.append(epoch)
-            batches.append(batch_idx)
-            value_losses.append(value_loss.item())
-            grad_norms.append(grad_norm.item())
-            grad_means.append(grad_mean.item())
-            grad_stds.append(grad_std.item())
-            gradient_hists.append({name: p.grad.cpu().numpy() for name, p in value_network.named_parameters() if p.grad is not None})
+            # Log the loss and gradients
+            wandb.log({
+                "epoch": epoch,
+                "batch": batch_idx,
+                "value_loss": value_loss.item(),
+                "value_network_grad_norm": grad_norm, 
+                "value_network_grad_mean": grad_mean, 
+                "value_network_grad_std": grad_std,
+                **{f"gradients/{name}": wandb.Histogram(p.grad.cpu().numpy()) for name, p in value_network.named_parameters() if p.grad is not None}
+            })
 
-    wandb.log({
-        "epochs": epochs_time_series,
-        "batches": batches,
-        'value_loss': value_losses,
-        'grad_norm': grad_norms,
-        'grad_mean': grad_means,
-        'grad_std': grad_stds,
-    })
-
+    wandb.finish()
     return value_network    
+criterion = torch.nn.MSELoss()
 
-def run_callbacks(model, epsilon, gamma, dataloader, num_chains, num_draws, dataset, callbacks, device, criterion):
-    assert validate_callbacks(callbacks)
+def run_callbacks(model, epsilon, gamma, dataloader, num_chains, num_draws, dataset, callbacks, device):
+    torch.manual_seed(1)
     optim_kwargs = {
         "lr": epsilon,
         "elasticity": gamma,
@@ -271,11 +264,11 @@ def run_callbacks(model, epsilon, gamma, dataloader, num_chains, num_draws, data
         "num_samples": len(dataset), 
         "save_noise": True
     }
-    
+    torch.manual_seed(1)
     if callbacks is None:
         llc_estimator = OnlineLLCEstimator(num_chains, num_draws, len(dataset), device=device)
         callbacks = [llc_estimator]
-
+    torch.manual_seed(1)
     sample(
         model=model, 
         loader=dataloader, 
@@ -286,7 +279,7 @@ def run_callbacks(model, epsilon, gamma, dataloader, num_chains, num_draws, data
         num_draws = num_draws, 
         callbacks = callbacks, 
         device=device, 
-        cores=1
+        seed=1
     )
     
     results = {}
@@ -295,8 +288,164 @@ def run_callbacks(model, epsilon, gamma, dataloader, num_chains, num_draws, data
         if hasattr(callback, "sample"):
             results.update(callback.sample())
     return results
+    
 
-#%%
+def estimate_llcs_sweeper(model, epsilons, gammas, dataloader, dataset):
+    results = {}
+    for epsilon in epsilons:
+        for gamma in gammas:
+            print(f"epsilon: {epsilon}, gamma: {gamma}, model 8000")
+            optim_kwargs = dict(
+                lr=epsilon,
+                noise_level=1.0,
+                elasticity=gamma,
+                num_samples=len(dataset),
+                temperature="adaptive",
+            )
+            pair = (epsilon, gamma)
+            # try:
+            grad_norm = GradientNorm(
+                num_chains = num_chains, 
+                num_draws = num_draws, 
+                device=device
+            )
+            llc_estimater = LLCEstimator(
+                num_chains = num_chains,
+                num_draws = num_draws, 
+                device = device
+            )
+            callbacks = [llc_estimater, grad_norm]
+            results[pair] = run_callbacks(
+                train_loader=dataloader,
+                train_data=dataset, 
+                weights = model.parameters(),
+                criterion=criterion,
+
+                
+            )
+            results[pair] = estimate_learning_coeff_with_summary(
+                model=model,
+                loader=dataloader,
+                criterion=criterion,
+                sampling_method=SGLD,
+                optimizer_kwargs=optim_kwargs,
+                num_chains=num_chains,
+                num_draws=num_draws,
+                device=device,
+                online=True,
+                callbacks=callbacks
+            )
+            # except:
+            #     print("failed")
+            #     results[pair] = None
+    return results
+
+def plot_single_graph(result, filename=None, title=''):
+    llc_color = 'teal'
+    fig, axs = plt.subplots(1, 1)
+    # plot loss traces
+    loss_traces = result['loss/trace']
+    for trace in loss_traces:
+        init_loss = trace[0]
+        zeroed_trace = trace - init_loss
+        sgld_steps = list(range(len(trace)))
+        axs.plot(sgld_steps, zeroed_trace)
+
+    # plot llcs
+    means = result['llc/means']
+    stds = result['llc/stds']
+    sgld_steps = list(range(len(means)))
+    axs2 = axs.twinx() 
+    axs2.plot(sgld_steps, means, color=llc_color, linestyle='--', linewidth=2, label=f'llc', zorder=3)
+    axs2.fill_between(sgld_steps, means - stds, means + stds, color=llc_color, alpha=0.3, zorder=2)
+
+    # center zero, assume zero is in the range of both y axes already
+    y1_min, y1_max = axs.get_ylim()
+    y2_min, y2_max = axs2.get_ylim()
+    y1_zero_ratio = abs(y1_min) / (abs(y1_min) + abs(y1_max))
+    y2_zero_ratio = abs(y2_min) / (abs(y2_min) + abs(y2_max))
+    percent_to_add = abs(y1_zero_ratio - y2_zero_ratio)
+    y1_amt_to_add = (y1_max - y1_min) * percent_to_add
+    y2_amt_to_add = (y2_max - y2_min) * percent_to_add
+    if y1_zero_ratio < y2_zero_ratio:
+        # add to bottom of y1 and top of y2
+        y1_min -= y1_amt_to_add
+        y2_max += y2_amt_to_add
+    elif y2_zero_ratio < y1_zero_ratio:
+        # add to bottom of y2 and top of y1
+        y2_min -= y2_amt_to_add
+        y1_max += y1_amt_to_add
+    axs.set_ylim(y1_min, y1_max)
+    axs2.set_ylim(y2_min, y2_max)
+    axs.set_xlabel('SGLD time step')
+    axs.set_ylabel('loss')
+    axs2.set_ylabel('llc', color=llc_color)
+    axs2.tick_params(axis='y', labelcolor=llc_color)
+    axs.axhline(color='black', linestyle=':')
+    fig.suptitle(title, fontsize=16)
+    plt.tight_layout()
+    if filename is not None:
+        plt.savefig(filename)
+        plt.close()
+    else:
+        plt.show()
+
+def plot_sweep_single_model(results, epsilons, gammas, filename, **kwargs):
+    llc_color = 'teal'
+    fig, axs = plt.subplots(len(epsilons), len(gammas))
+
+    for i, epsilon in enumerate(epsilons):
+        for j, gamma in enumerate(gammas):
+            result = results[(epsilon, gamma)]
+            if result is None:
+                continue
+            # plot loss traces
+            loss_traces = result['loss/trace']
+            for trace in loss_traces:
+                init_loss = trace[0]
+                zeroed_trace = trace - init_loss
+                sgld_steps = list(range(len(trace)))
+                axs[i, j].plot(sgld_steps, zeroed_trace)
+
+            # plot llcs
+            means = result['llc/means']
+            stds = result['llc/stds']
+            sgld_steps = list(range(len(means)))
+            axs2 = axs[i, j].twinx() 
+            axs2.plot(sgld_steps, means, color=llc_color, linestyle='--', linewidth=2, label=f'llc', zorder=3)
+            axs2.fill_between(sgld_steps, means - stds, means + stds, color=llc_color, alpha=0.3, zorder=2)
+
+            # center zero, assume zero is in the range of both y axes already
+            y1_min, y1_max = axs[i, j].get_ylim()
+            y2_min, y2_max = axs2.get_ylim()
+            y1_zero_ratio = abs(y1_min) / (abs(y1_min) + abs(y1_max))
+            y2_zero_ratio = abs(y2_min) / (abs(y2_min) + abs(y2_max))
+            percent_to_add = abs(y1_zero_ratio - y2_zero_ratio)
+            y1_amt_to_add = (y1_max - y1_min) * percent_to_add
+            y2_amt_to_add = (y2_max - y2_min) * percent_to_add
+            if y1_zero_ratio < y2_zero_ratio:
+                # add to bottom of y1 and top of y2
+                y1_min -= y1_amt_to_add
+                y2_max += y2_amt_to_add
+            elif y2_zero_ratio < y1_zero_ratio:
+                # add to bottom of y2 and top of y1
+                y2_min -= y2_amt_to_add
+                y1_max += y1_amt_to_add
+            axs[i, j].set_ylim(y1_min, y1_max)
+            axs2.set_ylim(y2_min, y2_max)
+            
+            axs[i, j].set_title(f"$\epsilon$ = {epsilon} : $\gamma$ = {gamma}")
+            # only show x axis label on last row
+            if i == len(epsilons) - 1:
+                axs[i, j].set_xlabel('SGLD time step')
+            axs[i, j].set_ylabel('loss')
+            axs2.set_ylabel('llc', color=llc_color)
+            axs2.tick_params(axis='y', labelcolor=llc_color)
+    if kwargs['title']:
+        fig.suptitle(kwargs['title'], fontsize=16)
+    plt.tight_layout()
+    plt.savefig(filename)
+
 # Set your specific run ID here
 run_id = "jp9tjfzd"
 project_name = "procgen"
@@ -307,11 +456,13 @@ api = wandb.Api()
 # Fetch the run
 run = api.run(f"{project_name}/{run_id}")
 
+torch.manual_seed(1)
+
 ####################
 ## HYPERPARAMETERS #
 #################### 
 param_name = 'easy'
-gpu_device = args.gpu
+# gpu_device = int(0)
 env_name = "maze_aisc"
 start_level = 0
 num_levels = 0
@@ -330,7 +481,7 @@ for key, value in hyperparameters.items():
 ## DEVICE ##
 ############
 # os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_device)
-device = torch.device(f'cuda:{str(gpu_device)}' if torch.cuda.is_available() else 'cpu')
+# device = torch.device('cuda')
 
 #################
 ## ENVIRONMENT ##
@@ -365,93 +516,54 @@ if not (os.path.exists(logdir)):
     os.makedirs(logdir)
 logger = Logger(n_envs, logdir)
 
-wandb.init(project="procgen", name="procgen-lambdahat-estimation")
-criterion = torch.nn.MSELoss()
-epsilon = 1e-6
-gamma = 1e5
-num_chains = 3
-num_draws = 25
-datapoints = 4000
-batch_size = 1000
-temperature = "adaptive"
-noise_level = 1.0
-num_burnin_steps = 0
-num_steps_bw_draws = 1
-num_epochs = 100
-artifact_start = args.start
-artifact_end = args.end
+artifact_no = 8000
+llcs = []
+results = []
+os.makedirs("variance_data", exist_ok=True)
+timestamp = time.time()
+dataloader, dataset, value_network = get_artifact_network_and_data(
+    artifact_number = artifact_no, 
+    datapoints = 4000, 
+    batch_size = 1000, 
+    download=False
+)
+print(f"Optimizing value network {artifact_no}")
+device = torch.device(args.device)
+torch.manual_seed(1)
+np.random.seed(1)
+value_network = optimize_value_network(value_network, dataloader, epochs=200)
 
-wandb.log({
-    'epsilon': epsilon,
-    'gamma': gamma,
-    'num_chains': num_chains,
-    'num_draws': num_draws,
-    'datapoints': datapoints,
-    'batch_size': batch_size,
-    'temperature': temperature,
-    'noise_level': noise_level,
-    'num_burnin_steps': num_burnin_steps,
-    'num_steps_bw_draws': num_steps_bw_draws, 
-    'num_epochs': num_epochs, 
-    'artifact_start': artifact_start,
-    'artifact_end': artifact_end,
-    'gpu_device': gpu_device
-})
-
-for artifact_number in tqdm(range(artifact_start, artifact_end)):
+for i in tqdm(range(5)):
+    epsilon = 1e-6
+    gamma = 8e5
+    num_chains = 20
+    num_draws = 2000
+    llc_estimator = OnlineLLCEstimator(num_chains, num_draws, len(dataset), device=device)
+    grad_norm = GradientNorm(num_chains, num_draws, device=device)
+    callbacks = [llc_estimator, grad_norm]
     torch.manual_seed(1)
-    dataloader, dataset, value_network = get_artifact_network_and_data(
-        artifact_number = artifact_number, 
-        datapoints = datapoints, 
-        batch_size = batch_size
+    np.random.seed(1)
+    result = run_callbacks(
+        model=value_network,
+        epsilon=epsilon,
+        gamma=gamma,
+        dataloader=dataloader,
+        num_chains=num_chains,
+        num_draws=num_draws,
+        dataset=dataset,
+        callbacks=callbacks,
+        device=device
     )
+    llcs.append(result['llc/means'][-1])
+    results.append(result)
+    with open(f"variance_data/result_{timestamp}_{artifact_no}.pkl", "wb") as f:
+        pickle.dump(results, f)
 
-    value_network = optimize_value_network(value_network, dataloader, epochs=num_epochs)
-    # torch.save(value_network.state_dict(), 'value_network_local_min.pth')
+    # check that the seeds result in the same llc
+    if i > 0:
+        same_llc = llcs[-1] == llcs[-2]
+        print(f"Same llc: {same_llc}")
 
-    llc_estimator = LLCEstimator(num_chains, num_draws, len(dataset), device=device)
-    grad_norms = GradientNorm(num_chains, num_draws, len(dataset), device=device)
-    callbacks = [llc_estimator, grad_norms]
-    torch.manual_seed(1)
-    results = run_callbacks(
-        model = value_network,
-        epsilon = epsilon,
-        gamma = gamma,
-        dataloader = dataloader,
-        num_chains = num_chains,
-        num_draws = num_draws,
-        dataset = dataset,
-        callbacks = callbacks,
-        device = device,
-        criterion = criterion
-    )    
-    trace = results['loss/trace']
-    llc = results['llc/mean']
-    llc_std = results['llc/std']
-    grad_norm = results['gradient_norm/trace'].mean()
-    time_log = str(time.time())
-    plot_trace_and_save(
-        trace = trace,
-        y_axis = 'L_n(w)',
-        name = f"trace_plot_{time_log}.png",
-        x_axis = "step", 
-        title = " Learning Coefficient Trace",
-        plot_mean=False,
-        plot_std=False,
-        fig_size=(12, 9),
-        true_lc = None
-    )
-    # delete value network
-    # os.remove('value_network_local_min.pth')
-
-    wandb.log({
-        'artifact_number': artifact_number,
-        'llc': llc,
-        'llc_std': llc_std, 
-        'learning_coeff_stats': results, 
-        'mean grad_norm': grad_norm,
-        "trace plot": wandb.Image(f"trace_plot_{time_log}.png")
-    })
-    os.remove(f"trace_plot_{time_log}.png")
-
-wandb.finish()
+plt.hist(llcs, bins=20)
+plt.savefig(f"variance_data/llc_histogram_{timestamp}.png")
+plt.close()
