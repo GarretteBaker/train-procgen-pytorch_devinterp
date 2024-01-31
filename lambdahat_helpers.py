@@ -1,4 +1,3 @@
-#%%
 import wandb
 from tqdm import tqdm
 import torch
@@ -104,12 +103,7 @@ def plot_trace_and_save(trace, y_axis, name, x_axis='step', title=None, plot_mea
 #     parser.add_argument('--log_level',        type=int, default = int(40), help='[10,20,30,40]')
 #     parser.add_argument('--num_checkpoints',  type=int, default = int(1), help='number of checkpoints to store')
 
-# parser stuff
-parser = argparse.ArgumentParser()
-parser.add_argument('--device',           type=str, default = 'cuda:0', required = False)
-args = parser.parse_args()
-device = torch.device(args.device)
-print(device)
+
 #time.sleep(10)
 def get_model_number(model_name):
     # model is of format model_<number>:v<version>
@@ -174,7 +168,7 @@ def gradient_single_plot(gradients, param_name: str, color='blue', plot_zero=Tru
     else:
         plt.show()
 
-def get_artifact_network_and_data(artifact_number, datapoints=100, batch_size=100, download=True):
+def get_artifact_network_and_data(artifact_number, datapoints=100, batch_size=100, download=True, device="cuda:0"):
     artifacts = run.logged_artifacts()
 
     if download:
@@ -211,7 +205,7 @@ def get_artifact_network_and_data(artifact_number, datapoints=100, batch_size=10
         value_network.load_state_dict(loaded_checkpoint['model_state_dict'])
     return dataloader, dataset, value_network
 
-def optimize_value_network(value_network, dataloader, epochs=50, lr=1e-5):
+def optimize_value_network(value_network, dataloader, epochs=50, lr=1e-5, device="cuda:0"):
     value_network.to(device)
     optimizer = torch.optim.Adam(value_network.parameters(), lr=lr)
     criterion = torch.nn.MSELoss()
@@ -290,7 +284,7 @@ def run_callbacks(model, epsilon, gamma, dataloader, num_chains, num_draws, data
     return results
     
 
-def estimate_llcs_sweeper(model, epsilons, gammas, dataloader, dataset):
+def estimate_llcs_sweeper(model, epsilons, gammas, dataloader, dataset, num_chains=3, num_draws=510, device="cuda:0"):
     results = {}
     for epsilon in epsilons:
         for gamma in gammas:
@@ -445,7 +439,6 @@ def plot_sweep_single_model(results, epsilons, gammas, filename, **kwargs):
         fig.suptitle(kwargs['title'], fontsize=16)
     plt.tight_layout()
     plt.savefig(filename)
-
 # Set your specific run ID here
 run_id = "jp9tjfzd"
 project_name = "procgen"
@@ -516,54 +509,3 @@ if not (os.path.exists(logdir)):
     os.makedirs(logdir)
 logger = Logger(n_envs, logdir)
 
-artifact_no = 8000
-llcs = []
-results = []
-os.makedirs("variance_data", exist_ok=True)
-timestamp = time.time()
-dataloader, dataset, value_network = get_artifact_network_and_data(
-    artifact_number = artifact_no, 
-    datapoints = 4000, 
-    batch_size = 1000, 
-    download=False
-)
-print(f"Optimizing value network {artifact_no}")
-device = torch.device(args.device)
-torch.manual_seed(1)
-np.random.seed(1)
-value_network = optimize_value_network(value_network, dataloader, epochs=200)
-
-for i in tqdm(range(5)):
-    epsilon = 9.1818e-7
-    gamma = 94000
-    num_chains = 20
-    num_draws = 2000
-    llc_estimator = OnlineLLCEstimator(num_chains, num_draws, len(dataset), device=device)
-    grad_norm = GradientNorm(num_chains, num_draws, device=device)
-    callbacks = [llc_estimator, grad_norm]
-    torch.manual_seed(1)
-    np.random.seed(1)
-    result = run_callbacks(
-        model=value_network,
-        epsilon=epsilon,
-        gamma=gamma,
-        dataloader=dataloader,
-        num_chains=num_chains,
-        num_draws=num_draws,
-        dataset=dataset,
-        callbacks=callbacks,
-        device=device
-    )
-    llcs.append(result['llc/means'][-1])
-    results.append(result)
-    with open(f"variance_data/result_{timestamp}_{artifact_no}.pkl", "wb") as f:
-        pickle.dump(results, f)
-
-    # check that the seeds result in the same llc
-    if i > 0:
-        same_llc = llcs[-1] == llcs[-2]
-        print(f"Same llc: {same_llc}")
-
-plt.hist(llcs, bins=20)
-plt.savefig(f"variance_data/llc_histogram_{timestamp}.png")
-plt.close()
