@@ -5,7 +5,7 @@ import torch
 import numpy as np
 import pickle
 import argparse
-import tqdm
+from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser()
