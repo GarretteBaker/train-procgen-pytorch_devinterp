@@ -12,7 +12,14 @@ args = parser.parse_args()
 
 device = torch.device(f"cuda:{args.device}" if torch.cuda.is_available() else "cpu")
 
-artifact_no = 8000
+if args.device == 0:
+    artifact_no = 2000
+elif args.device == 1:
+    artifact_no = 4000
+elif args.device == 2:
+    artifact_no = 6000
+elif args.device == 3:
+    artifact_no = 8000
 results = {}
 timestamp = time.time()
 dataloader, dataset, value_network = lah.get_artifact_network_and_data(
@@ -35,19 +42,6 @@ gammas = np.linspace(1e5 - 1e4, 1e5 + 1e4, 16)
 num_chains = 5 # making these too high so that we can vary them in case weird epsilons or gammas are found
 num_draws = 700
 os.makedirs(f"variance_data/{timestamp}", exist_ok=True)
-# splitting up load based 4 gpus
-if args.device == 0:
-    epsilons = epsilons[:3]
-    gammas = gammas[:4]
-elif args.device == 1:
-    epsilons = epsilons[:3]
-    gammas = gammas[4:8]
-elif args.device == 2:
-    epsilons = epsilons[:3]
-    gammas = gammas[8:12]
-elif args.device == 3:
-    epsilons = epsilons[3:]
-    gammas = gammas[:4]
 
 total_iterations = len(epsilons) * len(gammas)
 iteration_count = 0
@@ -71,8 +65,8 @@ for epsilon in epsilons:
             callbacks=callbacks,
             device=device
         )
-        results[(epsilon, gamma)] = result
-        with open(f"variance_data/{timestamp}/results.pkl", "wb") as f:
+        results[(artifact_no, epsilon, gamma)] = result
+        with open(f"variance_data/{timestamp}/results_{artifact_no}.pkl", "wb") as f:
             pickle.dump(results, f)
 
         iter_end_time = time.time()
