@@ -37,8 +37,8 @@ plt.rcParams["figure.figsize"]=15,12  # note: this cell may need to be re-run af
 def interpolate_parameters(artifact_number):
     # Define checkpoints and their optimal parameters
     checkpoints = [2000, 4000, 6000, 8000]
-    epsilons = [1.0454545454545456e-06, 1.009090909090909e-06, 9.545454545454546e-07, 1.0454545454545456e-06]
-    gammas = [90000, 110000, 94000, 103333.33333333333]
+    epsilons = [9.545454545454546e-07, 9.545454545454546e-07, 9.545454545454546e-07, 1.0454545454545456e-06]
+    gammas = [94000.0, 94000.0, 94000.0, 108666.66666666666]
 
     # Mapping artifact_number to step
     step = artifact_number
