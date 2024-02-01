@@ -11,58 +11,43 @@ import matplotlib.pyplot as plt
 # torch.use_deterministic_algorithms(True)
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--device", type=str, default="cpu")
+parser.add_argument("--device", type=int, default="0")
 args = parser.parse_args()
 
-device = torch.device(f"{args.device}" if torch.cuda.is_available() else "cpu")
+device = torch.device(f"cuda:{args.device}" if torch.cuda.is_available() else "cpu")
 
-artifact_start = 6000
-num_artifacts = 10
-llcs = []
-results = []
+epsilons = np.logspace(-9, -5, 16)
+gammas = np.logspace(3, 7, 16)
+modelno = 6000
 
-for artifact_number in tqdm(range(artifact_start, artifact_start + num_artifacts)):
-    os.makedirs("variance_data", exist_ok=True)
-    timestamp = time.time()
-    dataloader, dataset, value_network = lah.get_artifact_network_and_data(
-        artifact_number = artifact_number, 
-        datapoints = 400, 
-        batch_size = 100, 
-        download=False, 
-        shuffle=True
-    )
-    print(f"Optimizing value network {artifact_number}")
+# allocate epsilons according to the GPU number (there are 4)
+if args.device == 0:
+    epsilons = epsilons[:4]
+elif args.device == 1:
+    epsilons = epsilons[4:8]
+elif args.device == 2:
+    epsilons = epsilons[8:12]
+elif args.device == 3:
+    epsilons = epsilons[12:]
 
-    value_network = lah.optimize_value_network(value_network, dataloader, epochs=200)
-
-    epsilon = 9.1818e-7
-    gamma = 94000
-    num_chains = 20
-    num_draws = 700
-    llc_estimator = lah.OnlineLLCEstimator(num_chains, num_draws, len(dataset), device=device)
-    grad_norm = lah.GradientNorm(num_chains, num_draws, device=device)
-    callbacks = [llc_estimator, grad_norm]
-    torch.manual_seed(1)
-    np.random.seed(1)
-    torch.cuda.manual_seed(1)
-    result = lah.run_callbacks(
-        model=value_network,
-        epsilon=epsilon,
-        gamma=gamma,
-        dataloader=dataloader,
-        num_chains=num_chains,
-        num_draws=num_draws,
-        dataset=dataset,
-        callbacks=callbacks,
-        device=device
-    )
-    llcs.append(result['llc/means'][-1])
-    results.append(result)
-
-    with open(f"variance_data/{artifact_start}_{artifact_start+num_artifacts}_{timestamp}.pkl", "wb") as f:
-        pickle.dump(result, f)
-
-print(f"Spread of llcs: {max(llcs) - min(llcs)}")
-plt.plot(llcs)
-plt.savefig(f"variance_data/{artifact_start}_{artifact_start+num_artifacts}_{timestamp}_llcs.png")
-plt.close()
+spreads = dict()
+results_dict = dict()
+for epsilon in epsilons:
+    for gamma in gammas:
+        spread, results = lah.measure_lambdahat_local_variance(
+            modelno, 
+            10, 
+            epsilon, 
+            gamma, 
+            15, 
+            100,
+            device = device, 
+            datapoints = 2000,
+            batch_size = 500, 
+        )
+        spreads[(epsilon, gamma)] = spread
+        results_dict[(epsilon, gamma)] = results
+        with open(f"variance_data/spreads/{modelno}-{modelno+10}/{epsilons[0]}-{epsilons[-1]}.pkl", "wb") as f:
+            pickle.dump(spreads, f)
+        with open(f"variance_data/results/{modelno}-{modelno+10}/{epsilons[0]}-{epsilons[-1]}.pkl", "wb") as f:
+            pickle.dump(results_dict, f)

@@ -311,6 +311,60 @@ def run_callbacks(model, epsilon, gamma, dataloader, num_chains, num_draws, data
             results.update(callback.sample())
     return results
     
+def measure_lambdahat_local_variance(
+        artifact_start, 
+        num_artifacts,
+        epsilon,
+        gamma,
+        num_chains,
+        num_draws,
+        num_epochs = 200,
+        datapoints = 4000, 
+        batch_size = 1000,
+        device = "cpu", 
+        logging = True, 
+        download = False, 
+        shuffle = True
+    ):
+    llcs = []
+    results = []
+    timestamp = time.time()
+    if logging:
+        os.makedirs("variance_data/local_variance", exist_ok=True)
+
+    for artifact_number in tqdm(range(artifact_start, artifact_start + num_artifacts)):
+        dataloader, dataset, value_network = get_artifact_network_and_data(
+            artifact_number = artifact_number, 
+            datapoints = datapoints, 
+            batch_size = batch_size, 
+            download=download, 
+            shuffle=shuffle
+        )
+
+        print(f"Optimizing value network {artifact_number}")
+        value_network = optimize_value_network(value_network, dataloader, epochs=num_epochs)
+
+        llc_estimator = OnlineLLCEstimator(num_chains, num_draws, len(dataset), device=device)
+        grad_norm = GradientNorm(num_chains, num_draws, device=device)
+        callbacks = [llc_estimator, grad_norm]
+        result = run_callbacks(
+            model=value_network,
+            epsilon=epsilon,
+            gamma=gamma,
+            dataloader=dataloader,
+            num_chains=num_chains,
+            num_draws=num_draws,
+            dataset=dataset,
+            callbacks=callbacks,
+            device=device
+        )
+        llcs.append(result['llc/means'][-1])
+        results.append(result)
+        if logging:
+            with open(f"variance_data/local_variance/{artifact_start}_{artifact_start+num_artifacts}_{timestamp}.pkl", "wb") as f:
+                pickle.dump(results, f)
+    print(f"Saved results to variance_data/local_variance/{artifact_start}_{artifact_start+num_artifacts}_{timestamp}.pkl")
+    return max(llcs) - min(llcs), results
 
 def estimate_llcs_sweeper(model, epsilons, gammas, dataloader, dataset, num_chains=3, num_draws=510, device="cuda:0"):
     results = {}
