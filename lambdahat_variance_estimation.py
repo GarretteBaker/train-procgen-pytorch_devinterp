@@ -7,10 +7,12 @@ import pickle
 import argparse
 from tqdm import tqdm
 import matplotlib.pyplot as plt
-
+os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"  # or ":16:8" for the alternative configuration
 parser = argparse.ArgumentParser()
-parser.add_argument("--device", type=int, default=0)
+parser.add_argument("--device", type=str, default="cpu")
 args = parser.parse_args()
+
+device = torch.device(f"{args.device}" if torch.cuda.is_available() else "cpu")
 
 artifact_no = 8000
 llcs = []
@@ -22,22 +24,20 @@ dataloader, dataset, value_network = lah.get_artifact_network_and_data(
     datapoints = 4000, 
     batch_size = 1000, 
     download=False, 
-    shuffle=False
+    shuffle=True
 )
 print(f"Optimizing value network {artifact_no}")
 
-device_no = args.device
-device = torch.device(f"cuda:{device_no}" if torch.cuda.is_available() else "cpu")
 
 torch.manual_seed(1)
 np.random.seed(1)
-value_network = lah.optimize_value_network(value_network, dataloader, epochs=200)
+# value_network = lah.optimize_value_network(value_network, dataloader, epochs=200)
 
-for i in tqdm(range(5)):
+for i in tqdm(range(2)):
     epsilon = 9.1818e-7
     gamma = 94000
     num_chains = 1
-    num_draws = 10
+    num_draws = 100
     # num_chains = 20
     # num_draws = 2000
     llc_estimator = lah.OnlineLLCEstimator(num_chains, num_draws, len(dataset), device=device)
@@ -45,6 +45,8 @@ for i in tqdm(range(5)):
     callbacks = [llc_estimator, grad_norm]
     torch.manual_seed(1)
     np.random.seed(1)
+    torch.cuda.manual_seed(1)
+    torch.use_deterministic_algorithms(True)
     result = lah.run_callbacks(
         model=value_network,
         epsilon=epsilon,
@@ -66,6 +68,5 @@ for i in tqdm(range(5)):
         same_llc = llcs[-1] == llcs[-2]
         print(f"Same llc: {same_llc}")
 
-plt.hist(llcs, bins=20)
-plt.savefig(f"variance_data/llc_histogram_{timestamp}.png")
-plt.close()
+for n in range(10):
+    print(llcs[0] - llcs[1])

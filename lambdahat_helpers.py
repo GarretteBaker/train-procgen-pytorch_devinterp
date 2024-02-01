@@ -307,6 +307,7 @@ def run_callbacks(model, epsilon, gamma, dataloader, num_chains, num_draws, data
 
     for callback in callbacks:
         if hasattr(callback, "sample"):
+            torch.manual_seed(1)
             results.update(callback.sample())
     return results
     
@@ -488,7 +489,8 @@ start_level = 0
 num_levels = 0
 distribution_mode = "easy"
 exp_name = "hard-run"
-seed = random.randint(0,9999)
+# seed = random.randint(0,9999)
+seed=1
 num_checkpoints = 0
 
 print('[LOADING HYPERPARAMETERS...]')
