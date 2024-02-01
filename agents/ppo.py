@@ -124,7 +124,7 @@ class PPO(BaseAgent):
                    'Loss/entropy': np.mean(entropy_loss_list)}
         return summary
 
-    def generate_data_loader(self, num_samples, batch_size):
+    def generate_data_loader(self, num_samples, batch_size, shuffle=True):
         assert not self.policy.is_recurrent()
         observations = []
         rewards = []
@@ -161,7 +161,7 @@ class PPO(BaseAgent):
         print(f"Reward tensor size: {rew_tensor.size()}")
 
         dataset = torch.utils.data.TensorDataset(obs_tensor, rew_tensor)
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
 
         return dataloader, dataset
 
