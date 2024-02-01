@@ -33,6 +33,33 @@ from devinterp.slt.callback import validate_callbacks
 
 plt.rcParams["figure.figsize"]=15,12  # note: this cell may need to be re-run after creating a plot to take effect
 
+# Define the interpolation function
+def interpolate_parameters(artifact_number):
+    # Define checkpoints and their optimal parameters
+    checkpoints = [2000, 4000, 6000, 8000]
+    epsilons = [1.0454545454545456e-06, 1.009090909090909e-06, 9.545454545454546e-07, 1.0454545454545456e-06]
+    gammas = [90000, 110000, 94000, 103333.33333333333]
+
+    # Mapping artifact_number to step
+    step = artifact_number
+
+    # For steps below the first checkpoint, use the parameters of the first model
+    if step < checkpoints[0]:
+        return epsilons[0], gammas[0]
+
+    # For steps beyond the last checkpoint, use the parameters of the last model
+    if step >= checkpoints[-1]:
+        return epsilons[-1], gammas[-1]
+
+    # Interpolate parameters for steps between checkpoints
+    for i in range(len(checkpoints) - 1):
+        if checkpoints[i] <= step < checkpoints[i + 1]:
+            fraction = (step - checkpoints[i]) / (checkpoints[i + 1] - checkpoints[i])
+            epsilon = epsilons[i] + fraction * (epsilons[i + 1] - epsilons[i])
+            gamma = gammas[i] + fraction * (gammas[i + 1] - gammas[i])
+            return epsilon, gamma
+
+
 def plot_trace_and_save(trace, y_axis, name, x_axis='step', title=None, plot_mean=True, plot_std=True, fig_size=(12, 9), true_lc=None):
     num_chains, num_draws = trace.shape
     sgld_step = list(range(num_draws))
