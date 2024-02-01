@@ -17,8 +17,8 @@ epsilon = 9.1818e-07
 gamma = 94000.0
 
 # Other settings
-num_chains = 7
-num_draws = 181
+num_chains = 5
+num_draws = 700
 datapoints = 4000
 batch_size = 1000
 temperature = "adaptive"
@@ -59,7 +59,7 @@ for artifact_number in tqdm(range(artifact_start, artifact_end)):
         download=False
     )
 
-    value_network = lah.optimize_value_network(value_network, dataloader, epochs=num_epochs)
+    value_network = lah.optimize_value_network(value_network, dataloader, epochs=num_epochs, wandbinit=False)
 
     llc_estimator = lah.LLCEstimator(num_chains, num_draws, len(dataset), device=device)
     grad_norms = lah.GradientNorm(num_chains, num_draws, len(dataset), device=device)
@@ -74,9 +74,8 @@ for artifact_number in tqdm(range(artifact_start, artifact_end)):
         num_draws=num_draws,
         dataset=dataset,
         callbacks=callbacks,
-        device=device,
-        criterion=lah.criterion
-    )
+        device=device
+        )
     
     # Log results to wandb
     trace = results['loss/trace']

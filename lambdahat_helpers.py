@@ -232,17 +232,17 @@ def get_artifact_network_and_data(artifact_number, datapoints=100, batch_size=10
         value_network.load_state_dict(loaded_checkpoint['model_state_dict'])
     return dataloader, dataset, value_network
 
-def optimize_value_network(value_network, dataloader, epochs=50, lr=1e-5, device="cuda:0"):
+def optimize_value_network(value_network, dataloader, epochs=50, lr=1e-5, device="cuda:0", wandbinit=True):
     value_network.to(device)
     optimizer = torch.optim.Adam(value_network.parameters(), lr=lr)
     criterion = torch.nn.MSELoss()
-
-    # Initialize a new wandb run
-    wandb.init(
-        project="procgen-lambdahat-estimation", 
-        name="optimize_that_thing!", 
-        mode="offline"
-    )
+    if wandbinit:
+        # Initialize a new wandb run
+        wandb.init(
+            project="procgen-lambdahat-estimation", 
+            name="optimize_that_thing!", 
+            mode="offline"
+        )
 
     for epoch in tqdm(range(epochs)):
         for batch_idx, batch in enumerate(dataloader):
@@ -271,8 +271,8 @@ def optimize_value_network(value_network, dataloader, epochs=50, lr=1e-5, device
                 "value_network_grad_std": grad_std,
                 **{f"gradients/{name}": wandb.Histogram(p.grad.cpu().numpy()) for name, p in value_network.named_parameters() if p.grad is not None}
             })
-
-    wandb.finish()
+    if wandbinit:
+        wandb.finish()
     return value_network    
 criterion = torch.nn.MSELoss()
 
