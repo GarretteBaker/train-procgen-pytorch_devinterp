@@ -5,6 +5,8 @@ import os
 import lambdahat_helpers as lah
 import argparse
 import time
+os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"  # or ":16:8" for the alternative configuration
+torch.use_deterministic_algorithms(True)
 
 # Set up argument parsing
 parser = argparse.ArgumentParser()
@@ -25,7 +27,7 @@ temperature = "adaptive"
 noise_level = 1.0
 num_burnin_steps = 0
 num_steps_bw_draws = 1
-num_epochs = 200
+num_epochs = 100
 max_artifacts = 8000
 
 # Determine artifact range based on GPU
