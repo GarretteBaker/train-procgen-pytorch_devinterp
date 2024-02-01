@@ -195,7 +195,7 @@ def gradient_single_plot(gradients, param_name: str, color='blue', plot_zero=Tru
     else:
         plt.show()
 
-def get_artifact_network_and_data(artifact_number, datapoints=100, batch_size=100, download=True, device="cuda:0"):
+def get_artifact_network_and_data(artifact_number, datapoints=100, batch_size=100, download=True, device="cuda:0", shuffle=True):
     artifacts = run.logged_artifacts()
 
     if download:
@@ -222,7 +222,7 @@ def get_artifact_network_and_data(artifact_number, datapoints=100, batch_size=10
     policy.to(device)
     agent = AGENT(env, policy, logger, storage, device, num_checkpoints, **hyperparameters)
 
-    dataloader, dataset = agent.generate_data_loader(datapoints, batch_size)
+    dataloader, dataset = agent.generate_data_loader(datapoints, batch_size, shuffle=shuffle)
     value_network = CategoricalValueNetwork(model, False)
     if "state_dict" in loaded_checkpoint:
         loaded_checkpoint['state_dict'] = {k: v for k,v in loaded_checkpoint['state_dict'].items() if "policy" not in k}
