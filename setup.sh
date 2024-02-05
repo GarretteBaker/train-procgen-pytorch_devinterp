@@ -11,3 +11,5 @@ wandb login a39441ba061c141c5884e1cf68cddcba99cf2dc3
 pip install git+https://github.com/UlisseMini/circrl.git
 pip install git+https://github.com/GarretteBaker/procgenAISC_devinterp.git
 pip install plotly
+git config --global user.email "garrettebaker@outlook.com"
+git config --global user.name "GarretteBaker"
