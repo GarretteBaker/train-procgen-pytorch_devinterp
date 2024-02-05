@@ -32,6 +32,11 @@ elif args.device == 3:
 
 spreads = dict()
 results_dict = dict()
+os.makedirs(f"variance_data/spreads/{modelno}-{modelno+10}", exist_ok=True)
+os.makedirs(f"variance_data/results/{modelno}-{modelno+10}", exist_ok=True)
+# TODO: try keeping datapoints constant
+# TODO: Plot the loss of the optimized value networks over time
+# TODO: Off policy value estimation with optimal policy potentials? Probably in Sutton & Barto
 for epsilon in epsilons:
     for gamma in gammas:
         spread, results = lah.measure_lambdahat_local_variance(
@@ -42,12 +47,14 @@ for epsilon in epsilons:
             15, 
             100,
             device = device, 
-            datapoints = 2000,
+            datapoints = 2000, # TODO: run with 20,000 datapoints
             batch_size = 500, 
+            datasetnloader=None, 
+            optimize=True
         )
         spreads[(epsilon, gamma)] = spread
         results_dict[(epsilon, gamma)] = results
-        with open(f"variance_data/spreads/{modelno}-{modelno+10}/{epsilons[0]}-{epsilons[-1]}.pkl", "wb") as f:
+        with open(f"variance_data/spreads/constant_data/{modelno}-{modelno+10}/{epsilons[0]}-{epsilons[-1]}.pkl", "wb") as f:
             pickle.dump(spreads, f)
-        with open(f"variance_data/results/{modelno}-{modelno+10}/{epsilons[0]}-{epsilons[-1]}.pkl", "wb") as f:
+        with open(f"variance_data/results/constant_data/{modelno}-{modelno+10}/{epsilons[0]}-{epsilons[-1]}.pkl", "wb") as f:
             pickle.dump(results_dict, f)

@@ -193,9 +193,48 @@ def gradient_single_plot(gradients, param_name: str, color='blue', plot_zero=Tru
     if filename is not None:
         plt.savefig(filename)
     else:
-        plt.show()
+        plt.show()    
 
-def get_artifact_network_and_data(artifact_number, datapoints=100, batch_size=100, download=True, device="cuda:0", shuffle=True):
+def get_artifact_policy(
+        artifact_number,
+        download=True,
+        device="cuda:0"
+):
+    artifacts = run.logged_artifacts()
+
+    if download:
+        artifact = artifacts[artifact_number]
+        artifact_to_download = api.artifact(f"{project_name}/{artifact.name}", type="model")
+        artifact_dir = artifact_to_download.download()
+        model_file = f"{artifact_dir}/{artifact.name[:-3]}.pth"
+    else:
+        artifacts_files = os.listdir("models")
+        model_file = f"models/{artifacts_files[artifact_number]}/{artifacts_files[artifact_number]}"
+
+    hidden_state_dim = 0
+    observation_space = env.observation_space
+    observation_shape = observation_space.shape
+    storage = Storage(observation_shape, hidden_state_dim, n_steps, n_envs, device)
+
+    loaded_checkpoint = torch.load(model_file)
+    model = ImpalaModel(in_channels = observation_shape[0])
+    policy = CategoricalPolicy(model, False, env.action_space.n)
+    if "state_dict" in loaded_checkpoint:
+        policy.load_state_dict(loaded_checkpoint['state_dict'])
+    elif "model_state_dict" in loaded_checkpoint:
+        policy.load_state_dict(loaded_checkpoint['model_state_dict'])
+    policy.to(device)
+    return policy
+
+def get_artifact_network_and_data(
+        artifact_number, 
+        datapoints=100, 
+        batch_size=100, 
+        download=True, 
+        device="cuda:0", 
+        shuffle=True, 
+        generate_dataset=True
+    ):
     artifacts = run.logged_artifacts()
 
     if download:
@@ -222,7 +261,11 @@ def get_artifact_network_and_data(artifact_number, datapoints=100, batch_size=10
     policy.to(device)
     agent = AGENT(env, policy, logger, storage, device, num_checkpoints, **hyperparameters)
 
-    dataloader, dataset = agent.generate_data_loader(datapoints, batch_size, shuffle=shuffle)
+    if generate_dataset:
+        dataloader, dataset = agent.generate_data_loader(datapoints, batch_size, shuffle=shuffle)
+    else:
+        dataloader = None
+        dataset = None
     value_network = CategoricalValueNetwork(model, False)
     if "state_dict" in loaded_checkpoint:
         loaded_checkpoint['state_dict'] = {k: v for k,v in loaded_checkpoint['state_dict'].items() if "policy" not in k}
@@ -232,7 +275,24 @@ def get_artifact_network_and_data(artifact_number, datapoints=100, batch_size=10
         value_network.load_state_dict(loaded_checkpoint['model_state_dict'])
     return dataloader, dataset, value_network
 
-def optimize_value_network(value_network, dataloader, epochs=50, lr=1e-5, device="cuda:0", wandbinit=True):
+def evaluate_value_network(value_network, dataloader, device="cuda:0"):
+    value_network.to(device)
+    value_network.eval()
+    criterion = torch.nn.MSELoss()
+    losses = []
+
+    for batch_idx, batch in enumerate(dataloader):
+        observations, returns = batch
+        observations = observations.to(device)
+        returns = returns.to(device)
+        values_pred = value_network(observations)
+        value_loss = criterion(values_pred, returns)
+        losses.append(value_loss.item())
+    
+    mean_loss = sum(losses) / len(losses)
+    return mean_loss
+
+def optimize_value_network(value_network, dataloader, epochs=50, lr=1e-5, device="cuda:0", wandbinit=True, return_loss=False):
     value_network.to(device)
     optimizer = torch.optim.Adam(value_network.parameters(), lr=lr)
     criterion = torch.nn.MSELoss()
@@ -260,7 +320,6 @@ def optimize_value_network(value_network, dataloader, epochs=50, lr=1e-5, device
             grad_norm = torch.norm(torch.stack([torch.norm(p.grad.detach()) for p in value_network.parameters() if p.grad is not None]))
             grad_mean = torch.mean(torch.stack([torch.mean(p.grad.detach()) for p in value_network.parameters() if p.grad is not None]))
             grad_std = torch.std(torch.stack([torch.std(p.grad.detach()) for p in value_network.parameters() if p.grad is not None]))
-
             # Log the loss and gradients
             wandb.log({
                 "epoch": epoch,
@@ -273,6 +332,8 @@ def optimize_value_network(value_network, dataloader, epochs=50, lr=1e-5, device
             })
     if wandbinit:
         wandb.finish()
+    if return_loss:
+        return value_network, value_loss.item()
     return value_network    
 criterion = torch.nn.MSELoss()
 
@@ -324,7 +385,9 @@ def measure_lambdahat_local_variance(
         device = "cpu", 
         logging = True, 
         download = False, 
-        shuffle = True
+        shuffle = True, 
+        datasetnloader = None, 
+        optimize = True
     ):
     llcs = []
     results = []
@@ -333,16 +396,25 @@ def measure_lambdahat_local_variance(
         os.makedirs("variance_data/local_variance", exist_ok=True)
 
     for artifact_number in tqdm(range(artifact_start, artifact_start + num_artifacts)):
-        dataloader, dataset, value_network = get_artifact_network_and_data(
-            artifact_number = artifact_number, 
-            datapoints = datapoints, 
-            batch_size = batch_size, 
-            download=download, 
-            shuffle=shuffle
-        )
+        if datasetnloader is None:
+            dataloader, dataset, value_network = get_artifact_network_and_data(
+                artifact_number = artifact_number, 
+                datapoints = datapoints, 
+                batch_size = batch_size, 
+                download=download, 
+                shuffle=shuffle, 
+                generate_dataset=True
+            )
+        else:
+            _, _, value_network = get_artifact_network_and_data(
+                artifact_number = artifact_number,
+                download=download,
+            )
+            dataset, dataloader = datasetnloader
 
         print(f"Optimizing value network {artifact_number}")
-        value_network = optimize_value_network(value_network, dataloader, epochs=num_epochs)
+        if optimize:
+            value_network = optimize_value_network(value_network, dataloader, epochs=num_epochs)
 
         llc_estimator = OnlineLLCEstimator(num_chains, num_draws, len(dataset), device=device)
         grad_norm = GradientNorm(num_chains, num_draws, device=device)

@@ -36,6 +36,12 @@ class CategoricalPolicy(nn.Module):
         v = self.fc_value(hidden).reshape(-1)
         return p, v, hx
 
+    def forward_no_categorical(self, x):
+        hidden = self.embedder(x)
+        logits = self.fc_policy(hidden)
+        v = self.fc_value(hidden).reshape(-1)
+        return logits, v
+
 class CategoricalValueNetwork(nn.Module):
     def __init__(self, 
                  embedder,
@@ -64,3 +70,4 @@ class CategoricalValueNetwork(nn.Module):
         # p = Categorical(logits=log_probs)
         v = self.fc_value(hidden).reshape(-1)
         return v
+
